@@ -1,103 +1,227 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { 
-  Building2, Users, DollarSign, TrendingUp, CheckCircle, 
-  ChevronRight, ChevronLeft, FileText, TrendingDown, Zap, 
-  FileDown, Sparkles, RefreshCw, AlertCircle, 
-  Clock, Briefcase, AlertTriangle, ShieldAlert,
-  ToggleLeft, ToggleRight, Star
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FileDown,
+  Layers3,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Users,
 } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import ReactMarkdown from 'react-markdown';
-import SheetsSync from '../components/sheets-sync';
-import PrintableReport from '../components/printable-report';
-import { calculateROIMetrics } from '@/lib/calculations';
+import SheetsSync from '@/components/sheets-sync';
+import AssumptionsPanel from '@/components/assumptions-panel';
+import PrintableReport from '@/components/printable-report';
+import {
+  calculateFacilityROI,
+  calculatePortfolioROI,
+} from '@/lib/calculations';
+import { getScenarioAssumptions } from '@/lib/assumptions';
+import {
+  AnalysisMode,
+  FacilityROICalculatorInputs,
+  ScenarioAssumptions,
+  ScenarioKey,
+  TechCostMap,
+} from '@/lib/roi-types';
+
+const DEFAULT_TECH_COSTS: TechCostMap = {
+  recruiting: 0,
+  onboarding: 0,
+  payroll: 0,
+  time: 0,
+  scheduling: 0,
+  benefits: 0,
+  lms: 0,
+  performance: 0,
+  other: 0,
+};
+
+const DEFAULT_FACILITY: FacilityROICalculatorInputs = {
+  facilityName: 'Silver Maple Health & Rehab',
+  headcount: 120,
+  hourlyRate: 32,
+  adminLoadedHourlyRate: 38,
+  turnoverRate: 55,
+  rnTurnover: 45,
+  adminTurnover: 'No',
+  overallRating: 3,
+  staffingRating: 3,
+  healthInspectionRating: 3,
+  qualityMeasureRating: 3,
+  projectedOverallRating: 4,
+  healthDeficiencies: 0,
+  totalFines: 0,
+  pbjHoursPerMonth: 12,
+  overtimeHoursPerYear: 4800,
+  weeklyAgencyHours: 40,
+  agencyHourlyRate: 67,
+  annualMedicarePartARevenue: 4_500_000,
+  avgMonthlyResidentValue: 8750,
+  referralsPerStarLevel: 2,
+  censusResidentsProtected: 0,
+  complianceRiskExposure: 0,
+  softwareCost: 0,
+  currentTechCosts: { ...DEFAULT_TECH_COSTS },
+};
+
+const money = (value: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+
+const number = (value: number, digits = 0) =>
+  new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  }).format(value || 0);
+
+function createFacilityId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `facility-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 export default function LtcRoiCalculator() {
-  const [activeStep, setActiveStep] = useState<number>(1);
-  const [showPdfModal, setShowPdfModal] = useState(false);
-  const [pbjAuditFailureActive, setPbjAuditFailureActive] = useState(false);
-  const [step3Tab, setStep3Tab] = useState<'brief' | 'ai_advisory'>('brief');
+  const [activeStep, setActiveStep] = useState(1);
+  const [mode, setMode] = useState<AnalysisMode>('facility');
+  const [facility, setFacility] = useState<FacilityROICalculatorInputs>(DEFAULT_FACILITY);
+  const [portfolio, setPortfolio] = useState<FacilityROICalculatorInputs[]>([]);
+  const [scenario, setScenario] = useState<ScenarioKey>('expected');
+  const [assumptions, setAssumptions] = useState<ScenarioAssumptions>(
+    getScenarioAssumptions('expected'),
+  );
+  const [showReport, setShowReport] = useState(false);
+  const [proposerName, setProposerName] = useState('Paycor Consultant');
+  const [proposerTitle, setProposerTitle] = useState('Long-Term Care Advisor');
+  const [targetAudience, setTargetAudience] = useState('Executive Leadership Team');
+  const [aiStrategy, setAiStrategy] = useState('');
+  const [aiStrategyLoading, setAiStrategyLoading] = useState(false);
+  const [aiStrategyError, setAiStrategyError] = useState('');
 
-  // Input States - Restored Granular Controls
-  const [facilityName, setFacilityName] = useState<string>('Silver Maple Health & Rehab');
-  const [headcount, setHeadcount] = useState<number>(120);
-  const [hourlyRate, setHourlyRate] = useState<number>(32);
-  const [turnoverRate, setTurnoverRate] = useState<number>(55);
-  const [rnTurnover, setRnTurnover] = useState<number>(45);
-  const [adminTurnover, setAdminTurnover] = useState<string>('No'); // New CMS Administrative turnover field
-  const [totalFines, setTotalFines] = useState<number>(0);
-  const [healthDeficiencies, setHealthDeficiencies] = useState<number>(0);
-  const [pbjHours, setPbjHours] = useState<number>(140);
-  const [overtimeHours, setOvertimeHours] = useState<number>(4800);
-  const [annualMedicareBilling, setAnnualMedicareBilling] = useState<number>(4500000);
-  const [baselineVbpStars, setBaselineVbpStars] = useState<number>(3.0);
-  const [projectedVbpStars, setProjectedVbpStars] = useState<number>(4.0);
-  const [weeklyAgencyHours, setWeeklyAgencyHours] = useState<number>(40);
-  const [agencyHourlyRate, setAgencyHourlyRate] = useState<number>(67);
-  const [referralsPerStarLevel, setReferralsPerStarLevel] = useState<number>(2);
-  const [avgResidentValue, setAvgResidentValue] = useState<number>(8750);
-  
-  // New HR Tech Stack audit inputs
-  const [techCosts, setTechCosts] = useState({
-    recruiting: 0,
-    onboarding: 0,
-    payroll: 0,
-    time: 0,
-    scheduling: 0,
-    benefits: 0,
-    lms: 0,
-    performance: 0,
-    other: 0,
-  });
+  const facilityResults = useMemo(
+    () => calculateFacilityROI(facility, assumptions),
+    [facility, assumptions],
+  );
 
-  // Proposal Configuration
-  const [proposerName, setProposerName] = useState<string>('Bob Coughlin');
-  const [proposerTitle, setProposerTitle] = useState<string>('LTC Strategist');
-  const [targetAudience, setTargetAudience] = useState<string>('Chief Financial Officer');
-  const [softwareCost, setSoftwareCost] = useState<number>(0);
+  const portfolioResults = useMemo(
+    () => calculatePortfolioROI(portfolio, assumptions),
+    [portfolio, assumptions],
+  );
 
-  const [aiStrategy, setAiStrategy] = useState<string>('');
-  const [aiStrategyLoading, setAiStrategyLoading] = useState<boolean>(false);
-  const [aiStrategyError, setAiStrategyError] = useState<string>('');
+  const effectivePortfolioResults = useMemo(
+    () =>
+      portfolio.length > 0
+        ? portfolioResults
+        : calculatePortfolioROI([facility], assumptions),
+    [portfolio, portfolioResults, facility, assumptions],
+  );
 
-  const handleApplySheetMetrics = useCallback((metrics: any) => {
-    if (metrics.facilityName !== undefined) setFacilityName(metrics.facilityName);
-    if (metrics.headcount !== undefined) setHeadcount(metrics.headcount);
-    if (metrics.hourlyRate !== undefined) setHourlyRate(metrics.hourlyRate);
-    if (metrics.turnoverRate !== undefined) setTurnoverRate(metrics.turnoverRate);
-    if (metrics.rnTurnover !== undefined) setRnTurnover(metrics.rnTurnover);
-    if (metrics.adminTurnover !== undefined) setAdminTurnover(metrics.adminTurnover);
-    if (metrics.totalFines !== undefined) setTotalFines(metrics.totalFines);
-    if (metrics.healthDeficiencies !== undefined) setHealthDeficiencies(metrics.healthDeficiencies);
-    if (metrics.baselineVbpStars !== undefined) {
-       setBaselineVbpStars(metrics.baselineVbpStars);
-       setProjectedVbpStars(Math.min(5, metrics.baselineVbpStars + 1));
-    }
-    if (metrics.annualMedicareBilling !== undefined) setAnnualMedicareBilling(metrics.annualMedicareBilling);
+  const updateFacility = <K extends keyof FacilityROICalculatorInputs>(
+    key: K,
+    value: FacilityROICalculatorInputs[K],
+  ) => {
+    setFacility((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateTechCost = (key: keyof TechCostMap, value: number) => {
+    setFacility((current) => ({
+      ...current,
+      currentTechCosts: {
+        ...current.currentTechCosts,
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleApplyCmsMetrics = useCallback((metrics: any) => {
+    setFacility((current) => {
+      const overallRating = Number(
+        metrics.overallRating ?? metrics.baselineVbpStars ?? current.overallRating,
+      );
+      return {
+        ...current,
+        ccn: metrics.ccn ?? current.ccn,
+        state: metrics.state ?? current.state,
+        chainName: metrics.chainName ?? current.chainName,
+        facilityName: metrics.facilityName ?? current.facilityName,
+        headcount: metrics.headcount ?? current.headcount,
+        hourlyRate: metrics.hourlyRate ?? current.hourlyRate,
+        turnoverRate: metrics.turnoverRate ?? current.turnoverRate,
+        rnTurnover: metrics.rnTurnover ?? current.rnTurnover,
+        adminTurnover: metrics.adminTurnover ?? current.adminTurnover,
+        totalFines: metrics.totalFines ?? current.totalFines,
+        healthDeficiencies:
+          metrics.healthDeficiencies ?? current.healthDeficiencies,
+        overallRating,
+        staffingRating: Number(metrics.staffingRating ?? current.staffingRating),
+        projectedOverallRating: Number(
+          metrics.projectedOverallRating ??
+            metrics.projectedVbpStars ??
+            Math.min(5, overallRating + 1),
+        ),
+        annualMedicarePartARevenue:
+          metrics.annualMedicarePartARevenue ??
+          metrics.annualMedicareBilling ??
+          current.annualMedicarePartARevenue,
+      };
+    });
   }, []);
 
-  const results = useMemo(() => {
-    return calculateROIMetrics({
-      headcount, hourlyRate, turnoverRate, rnTurnover, totalFines, healthDeficiencies, adminTurnover,
-      pbjHours, overtimeHours, annualMedicareBilling, baselineVbpStars, weeklyAgencyHours,
-      agencyHourlyRate, avgResidentValue, softwareCost, pbjAuditFailureActive, referralsPerStarLevel, projectedVbpStars,
-      currentTechCosts: techCosts
+  const addOrUpdatePortfolioFacility = () => {
+    const normalized = {
+      ...facility,
+      id: facility.id || createFacilityId(),
+      currentTechCosts: { ...facility.currentTechCosts },
+    };
+    setPortfolio((current) => {
+      const index = current.findIndex((item) => item.id === normalized.id);
+      if (index === -1) return [...current, normalized];
+      return current.map((item) => (item.id === normalized.id ? normalized : item));
     });
-  }, [
-    headcount, hourlyRate, turnoverRate, rnTurnover, totalFines, healthDeficiencies, adminTurnover,
-    pbjHours, overtimeHours, annualMedicareBilling, baselineVbpStars, weeklyAgencyHours,
-    agencyHourlyRate, avgResidentValue, softwareCost, pbjAuditFailureActive, referralsPerStarLevel, projectedVbpStars, techCosts
-  ]);
+    setFacility(normalized);
+  };
 
-  const chartData = useMemo(() => [
-    { name: 'Turnover', Baseline: Math.round(results.baselineTurnoverCost), Projected: Math.round(results.baselineTurnoverCost - results.turnoverSavings) },
-    { name: 'Overtime', Baseline: Math.round(results.baselineOvertimeCost), Projected: Math.round(results.baselineOvertimeCost - results.overtimeSavings) },
-    { name: 'Agency', Baseline: Math.round(results.baselineAgencyCost), Projected: Math.round(results.baselineAgencyCost - results.agencySavings) },
-    { name: 'PBJ Admin', Baseline: Math.round(results.baselinePbjCost), Projected: Math.round(results.baselinePbjCost - results.pbjSavings) },
-    ...(pbjAuditFailureActive ? [{ name: 'Audit Penalty', Baseline: Math.round(results.pbjPenaltyCost), Projected: 0 }] : [])
-  ], [results, pbjAuditFailureActive]);
+  const startNewPortfolioFacility = () => {
+    setFacility({
+      ...DEFAULT_FACILITY,
+      id: createFacilityId(),
+      facilityName: 'New Facility',
+      currentTechCosts: { ...DEFAULT_TECH_COSTS },
+    });
+    setActiveStep(1);
+  };
+
+  const editPortfolioFacility = (selected: FacilityROICalculatorInputs) => {
+    setFacility({
+      ...selected,
+      currentTechCosts: { ...selected.currentTechCosts },
+    });
+    setActiveStep(1);
+  };
+
+  const removePortfolioFacility = (id?: string) => {
+    setPortfolio((current) => current.filter((item) => item.id !== id));
+  };
+
+  const handleScenarioChange = (
+    nextScenario: ScenarioKey,
+    nextAssumptions: ScenarioAssumptions,
+  ) => {
+    setScenario(nextScenario);
+    setAssumptions(nextAssumptions);
+  };
 
   const generateAiStrategyReport = async () => {
     setAiStrategyLoading(true);
@@ -105,558 +229,677 @@ export default function LtcRoiCalculator() {
     try {
       const response = await fetch('/api/advisory', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facilityName,
-          baselineVbpStars,
-          projectedVbpStars,
-          headcount,
-          hourlyRate,
-          turnoverRate,
-          rnTurnover,
-          adminTurnover,
-          totalFines,
-          healthDeficiencies,
-          pbjHours,
-          overtimeHours,
-          annualMedicareBilling,
-          weeklyAgencyHours,
-          agencyHourlyRate,
-          avgResidentValue,
-          softwareCost,
-          pbjAuditFailureActive,
+          mode,
+          facility,
+          facilityResults,
+          portfolioResults: effectivePortfolioResults,
+          portfolio: portfolio.length > 0 ? portfolio : [facility],
+          scenario,
+          assumptions,
           proposerName,
           proposerTitle,
           targetAudience,
-          referralsPerStarLevel,
-          currentTechCosts: techCosts
         }),
       });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Failed to generate advisory report');
-      }
-
       const data = await response.json();
-      setAiStrategy(data.advisory);
-    } catch (err: any) {
-      console.error(err);
-      setAiStrategyError(err.message || 'An error occurred during strategy report generation.');
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to generate advisory report.');
+      }
+      setAiStrategy(data.advisory || '');
+    } catch (error: any) {
+      setAiStrategyError(error.message || 'Unable to generate advisory report.');
     } finally {
       setAiStrategyLoading(false);
     }
   };
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-8 relative font-sans text-paycor-charcoal">
-      {/* Header */}
-      <div id="calculator-header" className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 bg-white border border-paycor-border-grey rounded-2xl p-6 shadow-sm">
-        <div>
-          <span className="text-[10px] uppercase font-bold tracking-wider text-white bg-paycor-charcoal px-2.5 py-1 rounded-md">B2B Enterprise Value Engine</span>
-          <h1 className="text-2xl font-extrabold text-paycor-charcoal mt-2">LTC Operational <span className="text-paycor-orange font-normal italic font-jennasue">ROI Strategy</span></h1>
-          <p className="text-xs text-paycor-medium-grey mt-1">Transform turnover, leakage, and compliance data into an executive-ready business case.</p>
-        </div>
-        <button id="btn-global-download" onClick={() => setShowPdfModal(true)} className="flex items-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-bold py-2.5 px-4 rounded-xl shadow-sm text-xs transition">
-          <FileDown className="w-4 h-4" /> Download PDF Report
-        </button>
-      </div>
+  const summary =
+    mode === 'portfolio'
+      ? {
+          directOpportunity: effectivePortfolioResults.totalDirectOpportunity,
+          baseBenefit: effectivePortfolioResults.totalPaycorInfluencedBenefit,
+          investment: effectivePortfolioResults.totalSoftwareCost,
+          netBenefit: effectivePortfolioResults.netAnnualBenefit,
+          roi: effectivePortfolioResults.roiPercent,
+          payback: effectivePortfolioResults.paybackMonths,
+          benefitCostRatio: effectivePortfolioResults.benefitCostRatio,
+          strategicUpside: effectivePortfolioResults.totalStrategicUpside,
+        }
+      : {
+          directOpportunity: facilityResults.totalDirectOpportunity,
+          baseBenefit: facilityResults.totalPaycorInfluencedBenefit,
+          investment: facilityResults.softwareCost,
+          netBenefit: facilityResults.netAnnualBenefit,
+          roi: facilityResults.roiPercent,
+          payback: facilityResults.paybackMonths,
+          benefitCostRatio: facilityResults.benefitCostRatio,
+          strategicUpside: facilityResults.totalStrategicUpside,
+        };
 
-      {/* Stepper */}
-      <div id="stepper-nav" className="grid grid-cols-3 bg-white border border-paycor-border-grey rounded-2xl p-2 mb-8 shadow-sm text-center font-bold text-xs select-none">
-        {[1, 2, 3].map(step => (
-          <button key={step} id={`btn-step-${step}`} onClick={() => setActiveStep(step)} className={`py-3 rounded-xl transition flex items-center justify-center gap-2 ${activeStep === step ? 'bg-paycor-orange text-white' : 'text-paycor-medium-grey hover:bg-slate-50'}`}>
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${activeStep === step ? 'bg-white text-paycor-orange' : 'bg-slate-100 text-paycor-medium-grey'}`}>{step}</span>
-            {step === 1 ? 'Diagnostic Registry' : step === 2 ? 'The Leakage Matrix' : 'Board-Ready Case'}
+  return (
+    <main className="max-w-6xl mx-auto px-4 py-8 text-paycor-charcoal">
+      <header className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div>
+            <span className="inline-flex items-center gap-1.5 text-[10px] uppercase font-extrabold tracking-wider text-white bg-paycor-charcoal px-2.5 py-1 rounded-md">
+              Consultant-Led Value Engineering
+            </span>
+            <h1 className="text-2xl md:text-3xl font-black mt-3">
+              Long-Term Care &amp; Skilled Nursing{' '}
+              <span className="text-paycor-orange">Operational ROI</span>
+            </h1>
+            <p className="text-xs text-paycor-medium-grey mt-2 max-w-3xl leading-relaxed">
+              Quantify current workforce leakage, isolate Paycor-influenced financial value, and disclose correlated CMS, census and SNF VBP upside separately.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowReport(true)}
+            className="inline-flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-3 rounded-xl text-xs shadow-sm cursor-pointer transition-colors"
+          >
+            <FileDown className="w-4 h-4" /> Customer Report
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-t border-slate-100 pt-5">
+          <div className="inline-flex bg-slate-100 p-1 rounded-xl self-start">
+            <button
+              type="button"
+              onClick={() => setMode('facility')}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                mode === 'facility'
+                  ? 'bg-white text-paycor-orange shadow-sm'
+                  : 'text-paycor-medium-grey'
+              }`}
+            >
+              <Building2 className="w-4 h-4" /> Single Facility
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('portfolio')}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                mode === 'portfolio'
+                  ? 'bg-white text-paycor-orange shadow-sm'
+                  : 'text-paycor-medium-grey'
+              }`}
+            >
+              <Layers3 className="w-4 h-4" /> Portfolio
+            </button>
+          </div>
+          {mode === 'portfolio' && (
+            <div className="text-xs text-paycor-medium-grey">
+              <strong>{portfolio.length}</strong> saved facilit{portfolio.length === 1 ? 'y' : 'ies'} ·{' '}
+              <strong>{number(effectivePortfolioResults.totalHeadcount)}</strong> total employees
+            </div>
+          )}
+        </div>
+      </header>
+
+      <nav className="grid grid-cols-3 bg-white border border-paycor-border-grey rounded-2xl p-2 mb-6 shadow-sm">
+        {[
+          [1, 'Diagnostic Inputs'],
+          [2, 'Value & Assumptions'],
+          [3, 'Executive Case'],
+        ].map(([step, label]) => (
+          <button
+            key={step}
+            type="button"
+            onClick={() => setActiveStep(Number(step))}
+            className={`py-3 rounded-xl text-[11px] md:text-xs font-extrabold transition cursor-pointer ${
+              activeStep === step
+                ? 'bg-paycor-orange text-white shadow-sm'
+                : 'text-paycor-medium-grey hover:bg-slate-50'
+            }`}
+          >
+            <span className="hidden sm:inline">{step}. </span>
+            {label}
           </button>
         ))}
-      </div>
+      </nav>
 
-      {/* STEP 1: Diagnostic Registry */}
       {activeStep === 1 && (
-        <div id="step-1-container" className="space-y-6 animate-fadeIn">
-          <SheetsSync onApplyMetrics={handleApplySheetMetrics} currentValues={{ facilityName, headcount, hourlyRate, turnoverRate, pbjHours, overtimeHours, annualMedicareBilling }} />
-          
-          <div id="manual-overrides-panel" className="bg-white border border-paycor-border-grey rounded-2xl p-6 shadow-sm">
-            <h2 className="text-sm font-extrabold text-paycor-charcoal uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3 mb-6">
-              <Building2 className="w-4 h-4 text-paycor-orange" /> Operational Diagnostics & Settings
-            </h2>
-            
-            {/* SECTION 1: FACILITY PROFILE & QUALITY */}
-            <div className="mb-6">
-              <h3 className="text-xs font-bold text-paycor-orange uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-paycor-orange"></span> Section 1: Facility Profile &amp; Quality Metrics
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Facility Name</label>
-                  <input type="text" value={facilityName} onChange={(e) => setFacilityName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Baseline Stars</label>
-                  <select value={baselineVbpStars} onChange={(e) => setBaselineVbpStars(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition">
-                    {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}.0 Stars</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Projected Stars</label>
-                  <select value={projectedVbpStars} onChange={(e) => setProjectedVbpStars(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition">
-                    {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}.0 Stars</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">CMS Health Deficiencies</label>
-                  <input type="number" value={healthDeficiencies} onChange={(e) => setHealthDeficiencies(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Surveyor Fines ($)</label>
-                  <input type="number" value={totalFines} onChange={(e) => setTotalFines(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Referrals Per Star Level</label>
-                  <input type="number" value={referralsPerStarLevel} onChange={(e) => setReferralsPerStarLevel(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-              </div>
-            </div>
+        <div className="space-y-6 animate-fadeIn">
+          <SheetsSync
+            onApplyMetrics={handleApplyCmsMetrics}
+            currentValues={{
+              facilityName: facility.facilityName,
+              headcount: facility.headcount,
+              hourlyRate: facility.hourlyRate,
+              turnoverRate: facility.turnoverRate,
+              pbjHours: facility.pbjHoursPerMonth,
+              overtimeHours: facility.overtimeHoursPerYear,
+              annualMedicareBilling: facility.annualMedicarePartARevenue,
+            }}
+          />
 
-            {/* SECTION 2: LABOR & OPERATIONAL DRIVERS */}
-            <div className="mb-6 border-t border-slate-100 pt-5">
-              <h3 className="text-xs font-bold text-paycor-orange uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-paycor-orange"></span> Section 2: Labor &amp; Operational Metrics
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Total Headcount</label>
-                  <input type="number" value={headcount} onChange={(e) => setHeadcount(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Average Hourly Rate ($)</label>
-                  <input type="number" value={hourlyRate} onChange={(e) => setHourlyRate(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">General Turnover (%)</label>
-                  <input type="number" value={turnoverRate} onChange={(e) => setTurnoverRate(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">RN-Specific Turnover (%)</label>
-                  <input type="number" value={rnTurnover} onChange={(e) => setRnTurnover(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Administrator Turnover</label>
-                  <select value={adminTurnover} onChange={(e) => setAdminTurnover(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition">
-                    <option value="No">No (Stable)</option>
-                    <option value="Yes">Yes (New Admin in past 12 mo)</option>
-                  </select>
-                </div>
-              </div>
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<Building2 className="w-4 h-4" />}
+              title="Facility and CMS Quality Profile"
+              description="CMS Five-Star ratings are separate from the SNF Value-Based Purchasing program."
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <TextInput
+                label="Facility Name"
+                value={facility.facilityName}
+                onChange={(value) => updateFacility('facilityName', value)}
+                className="sm:col-span-2"
+              />
+              <StarSelect
+                label="CMS Overall Rating"
+                value={facility.overallRating}
+                onChange={(value) => updateFacility('overallRating', value)}
+              />
+              <StarSelect
+                label="CMS Staffing Rating"
+                value={facility.staffingRating}
+                onChange={(value) => updateFacility('staffingRating', value)}
+              />
+              <StarSelect
+                label="Health Inspection Rating"
+                value={facility.healthInspectionRating || 3}
+                onChange={(value) => updateFacility('healthInspectionRating', value)}
+              />
+              <StarSelect
+                label="Quality Measure Rating"
+                value={facility.qualityMeasureRating || 3}
+                onChange={(value) => updateFacility('qualityMeasureRating', value)}
+              />
+              <StarSelect
+                label="Modeled Overall Rating"
+                value={facility.projectedOverallRating}
+                onChange={(value) => updateFacility('projectedOverallRating', value)}
+              />
+              <NumberInput
+                label="Health Deficiencies"
+                value={facility.healthDeficiencies}
+                onChange={(value) => updateFacility('healthDeficiencies', value)}
+              />
+              <NumberInput
+                label="CMS Fines / Penalties"
+                value={facility.totalFines}
+                prefix="$"
+                onChange={(value) => updateFacility('totalFines', value)}
+              />
             </div>
+          </section>
 
-            {/* SECTION 3: COMPLIANCE & PREMIUM RECOVERY */}
-            <div className="mb-6 border-t border-slate-100 pt-5">
-              <h3 className="text-xs font-bold text-paycor-orange uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-paycor-orange"></span> Section 3: Compliance &amp; Premium Cost Metrics
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">PBJ Audit Prep (hrs/mo)</label>
-                  <input type="number" value={pbjHours} onChange={(e) => setPbjHours(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Annual Overtime Hours</label>
-                  <input type="number" value={overtimeHours} onChange={(e) => setOvertimeHours(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Weekly Agency Hours</label>
-                  <input type="number" value={weeklyAgencyHours} onChange={(e) => setWeeklyAgencyHours(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Agency Hourly Rate ($)</label>
-                  <input type="number" value={agencyHourlyRate} onChange={(e) => setAgencyHourlyRate(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-              </div>
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<Users className="w-4 h-4" />}
+              title="Workforce and Premium Labor Drivers"
+              description="Use prospect actuals whenever available. CMS-derived estimates should be confirmed during discovery."
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <NumberInput label="Total Headcount" value={facility.headcount} onChange={(value) => updateFacility('headcount', value)} />
+              <NumberInput label="Average Hourly Rate" value={facility.hourlyRate} prefix="$" onChange={(value) => updateFacility('hourlyRate', value)} />
+              <NumberInput label="Admin Loaded Hourly Rate" value={facility.adminLoadedHourlyRate} prefix="$" onChange={(value) => updateFacility('adminLoadedHourlyRate', value)} />
+              <NumberInput label="General Turnover" value={facility.turnoverRate} suffix="%" onChange={(value) => updateFacility('turnoverRate', value)} />
+              <NumberInput label="RN Turnover" value={facility.rnTurnover} suffix="%" onChange={(value) => updateFacility('rnTurnover', value)} />
+              <NumberInput label="PBJ Prep Hours / Month" value={facility.pbjHoursPerMonth} onChange={(value) => updateFacility('pbjHoursPerMonth', value)} />
+              <NumberInput label="Annual Overtime Hours" value={facility.overtimeHoursPerYear} onChange={(value) => updateFacility('overtimeHoursPerYear', value)} />
+              <NumberInput label="Weekly Agency Hours" value={facility.weeklyAgencyHours} onChange={(value) => updateFacility('weeklyAgencyHours', value)} />
+              <NumberInput label="Agency Hourly Rate" value={facility.agencyHourlyRate} prefix="$" onChange={(value) => updateFacility('agencyHourlyRate', value)} />
             </div>
+          </section>
 
-            {/* SECTION 4: FINANCIAL & REVENUE DRIVERS */}
-            <div className="mb-6 border-t border-slate-100 pt-5">
-              <h3 className="text-xs font-bold text-paycor-orange uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-paycor-orange"></span> Section 4: Financial &amp; Census Growth Metrics
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Avg Monthly Resident Value ($)</label>
-                  <input type="number" value={avgResidentValue} onChange={(e) => setAvgResidentValue(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Medicare Annual Billing ($)</label>
-                  <input type="number" value={annualMedicareBilling} onChange={(e) => setAnnualMedicareBilling(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-              </div>
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<BarChart3 className="w-4 h-4" />}
+              title="Financial and Strategic Inputs"
+              description="Strategic values are displayed separately from the base ROI calculation."
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <NumberInput label="Annual Medicare FFS Part A Revenue" value={facility.annualMedicarePartARevenue} prefix="$" onChange={(value) => updateFacility('annualMedicarePartARevenue', value)} />
+              <NumberInput label="Average Monthly Resident Value" value={facility.avgMonthlyResidentValue} prefix="$" onChange={(value) => updateFacility('avgMonthlyResidentValue', value)} />
+              <NumberInput label="Referrals per Rating Level" value={facility.referralsPerStarLevel} onChange={(value) => updateFacility('referralsPerStarLevel', value)} />
+              <NumberInput label="Residents at Risk / Protected" value={facility.censusResidentsProtected} onChange={(value) => updateFacility('censusResidentsProtected', value)} />
+              <NumberInput label="Prospect-Estimated Compliance Exposure" value={facility.complianceRiskExposure} prefix="$" onChange={(value) => updateFacility('complianceRiskExposure', value)} />
+              <NumberInput label="Annual Paycor Investment" value={facility.softwareCost} prefix="$" onChange={(value) => updateFacility('softwareCost', value)} />
             </div>
+          </section>
 
-            {/* SECTION 5: RETIRED LEGACY HR TECH STACK AUDIT */}
-            <div className="mb-6 border-t border-slate-100 pt-5">
-              <h3 className="text-xs font-bold text-paycor-orange uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-paycor-orange"></span> Section 5: Retired Legacy HR Tech Stack Audit
-              </h3>
-              <p className="text-[10px] text-paycor-grey mb-4 leading-relaxed">Quantify current tech stack fees to demonstrate platform consolidation. Paycor replaces multiple disconnected legacy systems, reclaiming these active costs to offset software cost.</p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-5">
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<Layers3 className="w-4 h-4" />}
+              title="Retirable Technology Spend"
+              description="Enter recurring costs only for tools that can realistically be eliminated or not renewed."
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(Object.keys(facility.currentTechCosts) as (keyof TechCostMap)[]).map((key) => (
+                <NumberInput
+                  key={key}
+                  label={techCostLabels[key]}
+                  value={facility.currentTechCosts[key]}
+                  prefix="$"
+                  onChange={(value) => updateTechCost(key, value)}
+                />
+              ))}
+            </div>
+            <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider font-bold text-paycor-grey">Current Technology Spend</p>
+                <p className="text-xl font-black mt-1">{money(facilityResults.totalCurrentTechSpend)}</p>
+              </div>
+              <p className="text-[10px] text-paycor-medium-grey max-w-lg text-right leading-relaxed">
+                This amount is not deducted from the software investment. The confirmed retirable portion is counted once as annual avoided cost.
+              </p>
+            </div>
+          </section>
+
+          {mode === 'portfolio' && (
+            <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Recruiting / ATS Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.recruiting || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, recruiting: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
+                  <h2 className="text-sm font-extrabold">Portfolio Facility Builder</h2>
+                  <p className="text-[11px] text-paycor-medium-grey mt-1">
+                    Save this facility, then start another. Each location keeps its own operating inputs and investment.
+                  </p>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Onboarding / I-9 Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.onboarding || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, onboarding: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Core HR / Payroll Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.payroll || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, payroll: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Time &amp; Attendance Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.time || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, time: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Staff Scheduling Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.scheduling || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, scheduling: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Benefits Admin Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.benefits || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, benefits: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">LMS / Training Platform Cost ($/yr)</label>
-                  <input type="number" value={techCosts.lms || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, lms: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Performance Software Cost ($/yr)</label>
-                  <input type="number" value={techCosts.performance || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, performance: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Other Isolated HR Tools Cost ($/yr)</label>
-                  <input type="number" value={techCosts.other || ''} placeholder="0" onChange={(e) => setTechCosts({ ...techCosts, other: Number(e.target.value) || 0 })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={addOrUpdatePortfolioFacility} className="inline-flex items-center gap-2 bg-paycor-charcoal hover:bg-black text-white px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors">
+                    <CheckCircle2 className="w-4 h-4" /> {facility.id ? 'Update Facility' : 'Add Facility'}
+                  </button>
+                  <button type="button" onClick={startNewPortfolioFacility} className="inline-flex items-center gap-2 border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl text-xs font-bold text-paycor-medium-grey cursor-pointer transition-colors">
+                    <Plus className="w-4 h-4" /> New Facility
+                  </button>
                 </div>
               </div>
 
-              {/* LIVE TACK REPLACEMENT TICKER */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-9 h-9 rounded-full bg-paycor-orange/10 flex items-center justify-center text-paycor-orange font-bold text-sm shrink-0">
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-paycor-charcoal">Legacy Tech Reclamation Audit</h4>
-                    <p className="text-[10px] text-paycor-grey mt-0.5">Sum of retired services consolidated by Paycor.</p>
-                  </div>
+              {portfolio.length > 0 && (
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="text-left bg-slate-50">
+                      <tr>
+                        <th className="p-2 border-b border-slate-200 font-extrabold text-paycor-charcoal">Facility</th>
+                        <th className="p-2 border-b border-slate-200 font-extrabold text-paycor-charcoal">Headcount</th>
+                        <th className="p-2 border-b border-slate-200 font-extrabold text-paycor-charcoal">Turnover</th>
+                        <th className="p-2 border-b border-slate-200 font-extrabold text-paycor-charcoal">Investment</th>
+                        <th className="p-2 border-b border-slate-200 font-extrabold text-paycor-charcoal text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portfolio.map((item) => (
+                        <tr key={item.id} className="border-t border-slate-100">
+                          <td className="p-2 font-bold">{item.facilityName}</td>
+                          <td className="p-2">{number(item.headcount)}</td>
+                          <td className="p-2">{number(item.turnoverRate, 1)}%</td>
+                          <td className="p-2">{money(item.softwareCost)}</td>
+                          <td className="p-2">
+                            <div className="flex justify-end gap-1">
+                              <button type="button" onClick={() => editPortfolioFacility(item)} className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-[10px] font-bold cursor-pointer transition-colors">Edit</button>
+                              <button type="button" onClick={() => removePortfolioFacility(item.id)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer transition-colors" aria-label={`Remove ${item.facilityName}`}>
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="flex items-center gap-6 text-center shrink-0 w-full sm:w-auto justify-around sm:justify-end">
-                  <div>
-                    <p className="text-[9px] font-bold text-paycor-grey uppercase">Legacy Costs Retired</p>
-                    <p className="text-sm font-black text-paycor-charcoal">${Math.round(results.totalCurrentTechSpend).toLocaleString()}/yr</p>
-                  </div>
-                  <div className="border-l border-slate-200 pl-4">
-                    <p className="text-[9px] font-bold text-paycor-grey uppercase">Proposed Software Cost</p>
-                    <p className="text-sm font-bold text-paycor-charcoal">${Math.round(softwareCost).toLocaleString()}/yr</p>
-                  </div>
-                  <div className="border-l border-slate-200 pl-4">
-                    <p className="text-[9px] font-bold text-paycor-grey uppercase">Net Platform Cost</p>
-                    {results.netInvestment <= 0 ? (
-                      <span className="bg-paycor-green/10 border border-paycor-green/20 text-paycor-green font-extrabold text-[10px] px-2 py-0.5 rounded-full inline-block mt-0.5">Immediate Net-Zero!</span>
-                    ) : (
-                      <p className="text-sm font-black text-paycor-orange">${Math.round(results.netInvestment).toLocaleString()}/yr</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+              )}
+            </section>
+          )}
 
-            {results.isDefensiveMode ? (
-              <div id="defensive-badge-panel" className="p-3.5 bg-paycor-green/5 border border-paycor-green/20 rounded-xl flex items-start space-x-2 text-xs text-paycor-charcoal">
-                <Star className="w-4 h-4 text-paycor-green shrink-0 mt-0.5" />
-                <span><strong>Defensive Strategy Engaged:</strong> This facility is rated 4.0+ stars. The calculations have automatically pivoted to focus on risk mitigation, nursing retention shielding, and safeguarding your hospital discharges against compliance downgrades.</span>
-              </div>
-            ) : (
-              <div id="growth-badge-panel" className="p-3.5 bg-paycor-orange/5 border border-paycor-orange/20 rounded-xl flex items-start space-x-2 text-xs text-paycor-charcoal">
-                <TrendingDown className="w-4 h-4 text-paycor-orange shrink-0 mt-0.5" />
-                <span><strong>Growth Strategy Engaged:</strong> This facility is rated 1.0-3.0 stars. The math engine projects they are currently leaking an estimated <strong>{results.resolvedReferralsLostCurrently} hospital preferred-referral discharges per year</strong> to higher-rated area competitors. Targeting a lift to <strong>{projectedVbpStars}.0 Stars</strong> will unlock significant commercial census growth.</span>
-              </div>
-            )}
-            
-            <div className="flex justify-end mt-6 pt-4 border-t border-slate-100">
-              <button id="btn-next-to-leakage" onClick={() => setActiveStep(2)} className="flex items-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-bold py-2.5 px-6 rounded-xl transition shadow-sm text-sm">
-                Proceed to Leakage Matrix <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setActiveStep(2)} className="inline-flex items-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-5 py-3 rounded-xl text-xs cursor-pointer transition-all shadow-sm">
+              Continue to Value Model <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}
 
-      {/* STEP 2: The Leakage Matrix */}
       {activeStep === 2 && (
-        <div id="step-2-container" className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn">
-          {/* Left Column: Toggles & Risk */}
-          <div className="space-y-6">
-            <div id="pbj-audit-simulator-panel" className="bg-white border border-paycor-border-grey rounded-2xl overflow-hidden shadow-sm">
-              <div className="bg-white border-b border-slate-100 p-4 flex justify-between items-center text-paycor-charcoal">
-                <div className="flex items-center space-x-2">
-                  <ShieldAlert className="w-4 h-4 text-paycor-orange" />
-                  <span className="font-extrabold text-sm uppercase tracking-wider">PBJ Audit Simulator</span>
+        <div className="space-y-6 animate-fadeIn">
+          <AssumptionsPanel
+            scenario={scenario}
+            assumptions={assumptions}
+            onScenarioChange={handleScenarioChange}
+            onAssumptionsChange={setAssumptions}
+          />
+
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<BarChart3 className="w-4 h-4" />}
+              title={mode === 'portfolio' ? 'Portfolio Value Reconciliation' : 'Facility Value Reconciliation'}
+              description="The base business case uses direct and Paycor-influenced outcomes. Strategic correlated value remains outside base ROI."
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <SummaryCard label="Current Direct Opportunity" value={money(summary.directOpportunity)} />
+              <SummaryCard label="Paycor-Influenced Benefit" value={money(summary.baseBenefit)} emphasis />
+              <SummaryCard label="Annual Investment" value={money(summary.investment)} />
+              <SummaryCard label="Net Annual Benefit" value={money(summary.netBenefit)} positive={summary.netBenefit >= 0} />
+            </div>
+
+            {mode === 'facility' ? (
+              <div className="space-y-3">
+                {facilityResults.valueLineItems.map((item) => {
+                  const max = Math.max(item.currentBurden, item.annualBenefit, 1);
+                  return (
+                    <div key={item.key} className="border border-slate-200 rounded-2xl p-4 bg-white hover:border-paycor-orange/30 transition-colors">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                        <div className="max-w-3xl">
+                          <div className="flex items-center flex-wrap gap-2">
+                            <h3 className="text-xs font-extrabold text-paycor-charcoal">{item.label}</h3>
+                            <EvidenceBadge evidence={item.evidenceClass} />
+                            {!item.includedInBaseROI && (
+                              <span className="text-[9px] uppercase font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-150">Outside base ROI</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-paycor-medium-grey mt-1 leading-relaxed">{item.explanation}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[9px] uppercase font-bold text-paycor-grey">Annual Benefit</p>
+                          <p className="text-lg font-black text-paycor-orange">{money(item.annualBenefit)}</p>
+                        </div>
+                      </div>
+                      {item.currentBurden > 0 && (
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
+                          <div>
+                            <div className="flex justify-between mb-1 text-paycor-medium-grey"><span>Current burden</span><strong>{money(item.currentBurden)}</strong></div>
+                            <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-paycor-charcoal" style={{ width: `${Math.min(100, (item.currentBurden / max) * 100)}%` }} /></div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between mb-1 text-paycor-medium-grey"><span>Modeled benefit</span><strong>{money(item.annualBenefit)}</strong></div>
+                            <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-paycor-orange" style={{ width: `${Math.min(100, (item.annualBenefit / max) * 100)}%` }} /></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200">
+                  <thead className="bg-slate-50 text-left">
+                    <tr>
+                      <th className="p-3 border-b border-slate-200 font-extrabold text-paycor-charcoal">Facility</th>
+                      <th className="p-3 border-b border-slate-200 font-extrabold text-paycor-charcoal">Direct Opportunity</th>
+                      <th className="p-3 border-b border-slate-200 font-extrabold text-paycor-charcoal">Paycor-Influenced Benefit</th>
+                      <th className="p-3 border-b border-slate-200 font-extrabold text-paycor-charcoal">Net Benefit</th>
+                      <th className="p-3 border-b border-slate-200 font-extrabold text-paycor-charcoal">ROI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {effectivePortfolioResults.facilities.map(({ inputs, results }) => (
+                      <tr key={inputs.id || inputs.facilityName} className="border-t border-slate-150 hover:bg-slate-50/40">
+                        <td className="p-3 font-bold text-paycor-charcoal">{inputs.facilityName}</td>
+                        <td className="p-3 text-paycor-charcoal">{money(results.totalDirectOpportunity)}</td>
+                        <td className="p-3 text-paycor-charcoal">{money(results.totalPaycorInfluencedBenefit)}</td>
+                        <td className="p-3 text-paycor-charcoal">{money(results.netAnnualBenefit)}</td>
+                        <td className="p-3 font-extrabold text-paycor-orange">{results.roiPercent === null ? 'N/A' : `${number(results.roiPercent)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setActiveStep(1)} className="inline-flex items-center gap-2 text-xs font-bold text-paycor-medium-grey cursor-pointer hover:text-paycor-orange">
+              <ChevronLeft className="w-4 h-4" /> Back to Inputs
+            </button>
+            <button type="button" onClick={() => setActiveStep(3)} className="inline-flex items-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-5 py-3 rounded-xl text-xs cursor-pointer transition-all shadow-sm">
+              Build Executive Case <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeStep === 3 && (
+        <div className="space-y-6 animate-fadeIn">
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<CheckCircle2 className="w-4 h-4" />}
+              title="Board-Ready Financial Case"
+              description="Net ROI is calculated as (Paycor-influenced annual benefit − annual investment) ÷ annual investment."
+            />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <ExecutiveMetric label="Paycor-Influenced Benefit" value={money(summary.baseBenefit)} />
+              <ExecutiveMetric label="Net Annual Benefit" value={money(summary.netBenefit)} />
+              <ExecutiveMetric label="Net ROI" value={summary.roi === null ? 'N/A' : `${number(summary.roi)}%`} />
+              <ExecutiveMetric label="Benefit-Cost Ratio" value={summary.benefitCostRatio === null ? 'N/A' : `${summary.benefitCostRatio.toFixed(2)}x`} />
+              <ExecutiveMetric label="Payback Period" value={summary.payback === null ? 'N/A' : `${summary.payback.toFixed(1)} months`} />
+              <ExecutiveMetric label="Strategic Upside — Separate" value={money(summary.strategicUpside)} />
+              <ExecutiveMetric label="Potential Enterprise Value" value={money(summary.baseBenefit + summary.strategicUpside)} />
+              <ExecutiveMetric label="Scenario" value={scenario} capitalize />
+            </div>
+          </section>
+
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<FileDown className="w-4 h-4" />}
+              title="Customer Report Configuration"
+              description="These details appear in the printable, customer-facing report and AI advisory."
+            />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <TextInput label="Prepared By" value={proposerName} onChange={setProposerName} />
+              <TextInput label="Title" value={proposerTitle} onChange={setProposerTitle} />
+              <TextInput label="Target Audience" value={targetAudience} onChange={setTargetAudience} />
+            </div>
+            <button type="button" onClick={() => setShowReport(true)} className="mt-5 inline-flex items-center gap-2 bg-paycor-charcoal hover:bg-black text-white font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer transition-colors shadow-sm">
+              <FileDown className="w-4 h-4" /> Open Customer Report
+            </button>
+          </section>
+
+          <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
+            <SectionHeader
+              icon={<Sparkles className="w-4 h-4" />}
+              title="AI Strategic Advisory"
+              description="Gemini explains the verified calculations. The prompt prohibits invented savings, clinical claims, CMS outcomes or guarantees."
+            />
+            {!aiStrategy && !aiStrategyLoading && (
+              <button type="button" onClick={generateAiStrategyReport} className="inline-flex items-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-2.5 rounded-xl text-xs cursor-pointer transition-all shadow-sm">
+                <Sparkles className="w-4 h-4" /> Generate Advisory
+              </button>
+            )}
+            {aiStrategyLoading && (
+              <div className="flex items-center gap-2 text-xs text-paycor-medium-grey">
+                <RefreshCw className="w-4 h-4 animate-spin text-paycor-orange" /> Generating an evidence-aware advisory from the calculated results…
+              </div>
+            )}
+            {aiStrategyError && (
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> {aiStrategyError}
+              </div>
+            )}
+            {aiStrategy && (
+              <div className="space-y-4">
+                <div className="max-h-[520px] overflow-y-auto bg-slate-50 border border-slate-200 rounded-2xl p-6 prose prose-sm max-w-none">
+                  <ReactMarkdown>{aiStrategy}</ReactMarkdown>
                 </div>
-                <button id="btn-toggle-pbj" onClick={() => setPbjAuditFailureActive(!pbjAuditFailureActive)} className="focus:outline-none">
-                  {pbjAuditFailureActive ? <ToggleRight className="w-8 h-8 text-paycor-orange" /> : <ToggleLeft className="w-8 h-8 text-paycor-grey" />}
+                <button type="button" onClick={generateAiStrategyReport} className="inline-flex items-center gap-2 border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-xl text-xs font-bold text-paycor-medium-grey cursor-pointer transition-colors">
+                  <RefreshCw className="w-3.5 h-3.5" /> Regenerate Using Current Inputs
                 </button>
               </div>
-              <div className="p-5 text-xs text-paycor-medium-grey">
-                <p className="leading-relaxed">Simulate a PBJ compliance audit failure, which instantly triggers a 90-day 1-Star penalty and hospital preferred-referral freeze.</p>
-                {pbjAuditFailureActive && (
-                  <div id="pbj-warning-message" className="mt-4 p-3.5 bg-paycor-red-orange/10 border border-paycor-red-orange/20 text-paycor-charcoal rounded-xl font-bold flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-paycor-red-orange shrink-0 mt-0.5" />
-                    <span>Penalty Active: Added ${Math.round(results.pbjPenaltyCost).toLocaleString()} in lost annualized census revenue due to the simulated CMS citation level.</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div id="competitor-leakage-panel" className="bg-white border border-paycor-border-grey rounded-2xl p-5 shadow-sm">
-              <h3 className="font-bold text-sm text-paycor-charcoal mb-4">Competitor Leakage Mapping</h3>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs font-semibold text-paycor-medium-grey mb-1">
-                    <span>{facilityName} (Current)</span>
-                    <span className="font-bold">{baselineVbpStars} Stars</span>
-                  </div>
-                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
-                    <div className="h-full bg-paycor-orange transition-all duration-500" style={{ width: `${baselineVbpStars * 20}%` }} />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-xs font-semibold text-paycor-medium-grey mb-1">
-                    <span>Local Market Competitor Average</span>
-                    <span className="font-bold">3.8 Stars</span>
-                  </div>
-                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
-                    <div className="h-full bg-paycor-navy transition-all duration-500" style={{ width: `${3.8 * 20}%` }} />
-                  </div>
-                </div>
-                {!results.isDefensiveMode && (
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold text-paycor-medium-grey mb-1">
-                      <span>{facilityName} (Target Objective)</span>
-                      <span className="font-bold text-paycor-green">{projectedVbpStars} Stars</span>
-                    </div>
-                    <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
-                      <div className="h-full bg-paycor-green transition-all duration-500" style={{ width: `${projectedVbpStars * 20}%` }} />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <p className="text-[10px] text-paycor-grey mt-4 leading-relaxed">Closing the {Math.max(0, projectedVbpStars - baselineVbpStars).toFixed(1)}-Star gap directly drives discharge retention and safeguards reimbursement multipliers.</p>
-            </div>
-          </div>
-
-          {/* Right Column: Visual Projections */}
-          <div id="visual-projections-panel" className="bg-white border border-paycor-border-grey rounded-2xl p-6 shadow-sm flex flex-col">
-            <h2 className="text-base font-extrabold text-paycor-charcoal">Cost Projections</h2>
-            <p className="text-xs text-paycor-medium-grey mt-1 mb-6">Annualized savings mapped to Paycor direct-care workforce solutions.</p>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-                  <XAxis dataKey="name" fontSize={10} stroke="#888B8D" />
-                  <YAxis fontSize={10} stroke="#888B8D" />
-                  <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
-                  <Legend height={30} verticalAlign="top" iconSize={10} />
-                  <Bar dataKey="Baseline" fill="#3B4446" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Projected" fill="#F58220" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex justify-between items-center mt-auto pt-4 border-t border-slate-100">
-              <button id="btn-back-to-registry" onClick={() => setActiveStep(1)} className="text-xs text-paycor-medium-grey font-bold hover:underline">
-                &larr; Back to Registry
-              </button>
-              <button id="btn-generate-case" onClick={() => setActiveStep(3)} className="flex items-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-bold py-2.5 px-6 rounded-xl transition shadow-sm text-sm">
-                Generate Executive Case <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 3: Board Ready Case */}
-      {activeStep === 3 && (
-        <div id="step-3-container" className="bg-white border border-paycor-border-grey rounded-2xl overflow-hidden shadow-sm animate-fadeIn">
-          <div className="bg-white border-b border-slate-100 p-6 text-center">
-            <h2 className="text-xl font-extrabold text-paycor-charcoal">Final Financial Reconciliation</h2>
-            <p className="text-xs text-paycor-medium-grey mt-1">Strategic Operations &amp; Value Delivery</p>
-          </div>
-          
-          <div className="p-6">
-            {/* Tab Switches */}
-            <div id="step-3-tabs" className="flex border-b border-paycor-border-grey mb-6">
-              <button
-                id="btn-tab-brief"
-                onClick={() => setStep3Tab('brief')}
-                className={`py-2.5 px-4 font-bold text-xs border-b-2 transition ${step3Tab === 'brief' ? 'border-paycor-orange text-paycor-orange' : 'border-transparent text-paycor-grey hover:text-paycor-charcoal'}`}
-              >
-                Executive Financial Brief
-              </button>
-              <button
-                id="btn-tab-advisory"
-                onClick={() => setStep3Tab('ai_advisory')}
-                className={`py-2.5 px-4 font-bold text-xs border-b-2 transition flex items-center gap-1.5 ${step3Tab === 'ai_advisory' ? 'border-paycor-orange text-paycor-orange' : 'border-transparent text-paycor-grey hover:text-paycor-charcoal'}`}
-              >
-                <Sparkles className="w-3.5 h-3.5" /> AI Strategic Advisory
-              </button>
-            </div>
-
-            {step3Tab === 'brief' ? (
-              <div id="tab-brief-content" className="animate-fadeIn">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 border-b border-paycor-border-grey pb-8">
-                  <div className="border-r border-slate-200 pr-6 text-center">
-                    <p className="text-[10px] uppercase font-bold text-paycor-grey tracking-wider">Conservative ROI Model</p>
-                    <p className="text-3xl font-black text-paycor-charcoal mt-2">${Math.round(results.totalAnnualImpactConservative).toLocaleString()}</p>
-                    <p className="text-sm text-paycor-green font-bold mt-2">{results.roiRatioConservative.toFixed(0)}% ROI</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] uppercase font-bold text-paycor-grey tracking-wider">Optimistic ROI Model</p>
-                    <p className="text-3xl font-black text-paycor-charcoal mt-2">${Math.round(results.totalAnnualImpactOptimistic).toLocaleString()}</p>
-                    <p className="text-sm text-paycor-orange font-bold mt-2">{results.roiRatioOptimistic.toFixed(0)}% ROI</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-5 mb-8 bg-slate-50 border border-slate-100 p-5 rounded-2xl">
-                  <div className="text-center">
-                    <p className="text-[10px] font-bold text-paycor-grey uppercase">Staffing Savings</p>
-                    <p className="text-base font-extrabold text-paycor-charcoal mt-1">${Math.round(results.totalStaffingSavings).toLocaleString()}/yr</p>
-                  </div>
-                  <div className="text-center border-l border-slate-200 pl-4">
-                    <p className="text-[10px] font-bold text-paycor-grey uppercase">VBP &amp; Census Gain</p>
-                    <p className="text-base font-extrabold text-paycor-charcoal mt-1">
-                      ${Math.round(results.conservativeReferralRevenueImpact).toLocaleString()} - ${Math.round(results.optimisticReferralRevenueImpact).toLocaleString()}/yr
-                    </p>
-                  </div>
-                  <div className="text-center border-l border-slate-200 pl-4">
-                    <p className="text-[10px] font-bold text-paycor-grey uppercase">Legacy Tech Reclaims</p>
-                    <p className="text-base font-extrabold text-paycor-green mt-1">
-                      +${Math.round(results.totalCurrentTechSpend).toLocaleString()}/yr
-                    </p>
-                  </div>
-                  <div className="text-center border-l border-slate-200 pl-4">
-                    <p className="text-[10px] font-bold text-paycor-grey uppercase">Payback Window</p>
-                    <p className="text-base font-extrabold text-paycor-orange mt-1">
-                      {results.paybackPeriodMonthsOptimistic.toFixed(1)} to {results.paybackPeriodMonthsConservative.toFixed(1)} Months
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div id="tab-advisory-content" className="animate-fadeIn space-y-4">
-                {aiStrategy ? (
-                  <div className="space-y-4">
-                    <div id="ai-report-card" className="bg-slate-50 border border-paycor-border-grey rounded-2xl p-6 md:p-8 max-h-[420px] overflow-y-auto shadow-inner text-sm leading-relaxed text-slate-800 prose prose-slate">
-                      <ReactMarkdown>{aiStrategy}</ReactMarkdown>
-                    </div>
-                    <div className="flex justify-end">
-                      <button 
-                        id="btn-regenerate-ai"
-                        onClick={generateAiStrategyReport} 
-                        disabled={aiStrategyLoading} 
-                        className="flex items-center gap-2 border border-paycor-border-grey hover:border-paycor-orange text-paycor-charcoal hover:text-paycor-orange font-bold text-xs py-2 px-4 rounded-xl transition disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${aiStrategyLoading ? 'animate-spin' : ''}`} /> Regenerate Strategic advisory
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div id="ai-generation-prompt-card" className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center max-w-xl mx-auto">
-                    <Sparkles className="w-10 h-10 text-paycor-orange mx-auto mb-4" />
-                    <h3 className="font-extrabold text-paycor-charcoal text-base">Generate Strategic Board Advisory</h3>
-                    <p className="text-xs text-paycor-medium-grey mt-2 mb-6">Let Gemini analyze your current operational leakages, PBJ compliance risks, and county CMS benchmarks to draft a highly technical, numbers-driven strategic advisory memo tailored for **{targetAudience}**.</p>
-                    
-                    <button 
-                      id="btn-generate-ai-advisory"
-                      onClick={generateAiStrategyReport} 
-                      disabled={aiStrategyLoading}
-                      className="w-full flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-bold py-3 px-6 rounded-xl transition shadow-sm text-sm disabled:opacity-50"
-                    >
-                      {aiStrategyLoading ? (
-                        <>
-                           <RefreshCw className="w-4 h-4 animate-spin" />
-                           <span>Generating Advisory...</span>
-                        </>
-                      ) : (
-                        <>
-                           <Sparkles className="w-4 h-4" />
-                           <span>Draft Executive Memo</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {aiStrategyError && (
-                  <div id="ai-error-banner" className="p-4 bg-paycor-red-orange/10 border border-paycor-red-orange/20 text-paycor-charcoal text-xs rounded-xl flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-paycor-red-orange shrink-0" />
-                    <span>{aiStrategyError}</span>
-                  </div>
-                )}
-              </div>
             )}
+          </section>
 
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-6 border-t border-slate-100 pt-5">
-              <button id="btn-back-to-matrix" onClick={() => setActiveStep(2)} className="text-xs text-paycor-medium-grey font-bold hover:underline order-2 md:order-1">
-                &larr; Back to Leakage Matrix
-              </button>
-              <button id="btn-launch-pdf" onClick={() => setShowPdfModal(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-bold py-3 px-8 rounded-xl shadow-sm transition order-1 md:order-2 text-sm">
-                <FileDown className="w-5 h-5" /> Launch PDF Presentation
-              </button>
-            </div>
-            
-            {/* Proposal Configuration Fields */}
-            <div id="proposal-configuration-panel" className="mt-8 bg-slate-50 p-5 rounded-2xl border border-paycor-border-grey">
-              <h3 className="text-xs font-bold text-paycor-charcoal uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                <Briefcase className="w-3.5 h-3.5 text-paycor-orange" /> Final Proposal Configuration
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Prepared By</label>
-                  <input type="text" value={proposerName} onChange={(e) => setProposerName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Title</label>
-                  <input type="text" value={proposerTitle} onChange={(e) => setProposerTitle(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Target Audience</label>
-                  <input type="text" value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Software Cost ($)</label>
-                  <input type="number" value={softwareCost} onChange={(e) => setSoftwareCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-paycor-charcoal focus:border-paycor-orange outline-none transition" />
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setActiveStep(2)} className="inline-flex items-center gap-2 text-xs font-bold text-paycor-medium-grey cursor-pointer hover:text-paycor-orange">
+              <ChevronLeft className="w-4 h-4" /> Back to Value Model
+            </button>
           </div>
         </div>
       )}
 
-      {/* Full Screen Printable Modal Overlay */}
-      {showPdfModal && (
-        <PrintableReport 
-          inputs={{ 
-            headcount, hourlyRate, turnoverRate, rnTurnover, totalFines, healthDeficiencies, adminTurnover,
-            pbjHours, overtimeHours, annualMedicareBilling, baselineVbpStars, projectedVbpStars, 
-            weeklyAgencyHours, agencyHourlyRate, avgResidentValue, softwareCost, pbjAuditFailureActive,
-            referralsPerStarLevel, facilityName, proposerName, proposerTitle, targetAudience,
-            currentTechCosts: techCosts
-          }} 
-          results={results} 
-          onClose={() => setShowPdfModal(false)} 
+      {showReport && (
+        <PrintableReport
+          onClose={() => setShowReport(false)}
+          mode={mode}
+          facilityInputs={facility}
+          facilityResults={facilityResults}
+          portfolioResults={effectivePortfolioResults}
+          scenario={scenario}
+          assumptions={assumptions}
+          proposerName={proposerName}
+          proposerTitle={proposerTitle}
+          targetAudience={targetAudience}
         />
       )}
+    </main>
+  );
+}
+
+const techCostLabels: Record<keyof TechCostMap, string> = {
+  recruiting: 'Recruiting / ATS',
+  onboarding: 'Onboarding / I-9',
+  payroll: 'Core HR / Payroll',
+  time: 'Time & Attendance',
+  scheduling: 'Staff Scheduling',
+  benefits: 'Benefits Administration',
+  lms: 'Learning Management',
+  performance: 'Performance Management',
+  other: 'Other HR Technology',
+};
+
+function SectionHeader({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 border-b border-slate-100 pb-4 mb-5">
+      <div className="text-paycor-orange mt-0.5">{icon}</div>
+      <div>
+        <h2 className="text-sm font-extrabold text-paycor-charcoal">{title}</h2>
+        <p className="text-[10px] text-paycor-medium-grey mt-1 leading-relaxed">{description}</p>
+      </div>
     </div>
   );
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <label className={className}>
+      <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">{label}</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
+        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-paycor-charcoal outline-none focus:border-paycor-orange transition-colors"
+      />
+    </label>
+  );
+}
+
+function NumberInput({
+  label,
+  value,
+  onChange,
+  prefix,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  prefix?: string;
+  suffix?: string;
+}) {
+  return (
+    <label>
+      <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">{label}</span>
+      <div className="relative">
+        {prefix && <span className="absolute left-3 top-2.5 text-sm text-paycor-grey">{prefix}</span>}
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={Number.isFinite(value) ? value : 0}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(Number(event.target.value) || 0)}
+          className={`w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 text-sm text-paycor-charcoal outline-none focus:border-paycor-orange transition-colors ${prefix ? 'pl-7 pr-3' : 'px-3'} ${suffix ? 'pr-8' : ''}`}
+        />
+        {suffix && <span className="absolute right-3 top-2.5 text-sm text-paycor-grey">{suffix}</span>}
+      </div>
+    </label>
+  );
+}
+
+function StarSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label>
+      <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">{label}</span>
+      <select
+        value={value}
+        onChange={(event: React.ChangeEvent<HTMLSelectElement>) => onChange(Number(event.target.value))}
+        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-paycor-charcoal outline-none focus:border-paycor-orange cursor-pointer transition-colors"
+      >
+        {[1, 2, 3, 4, 5].map((star) => (
+          <option key={star} value={star}>{star}.0 Stars</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  emphasis = false,
+  positive,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+  positive?: boolean;
+}) {
+  return (
+    <div className={`rounded-2xl border p-4 ${emphasis ? 'bg-paycor-orange/5 border-paycor-orange/30 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
+      <p className="text-[9px] uppercase tracking-wider font-bold text-paycor-grey">{label}</p>
+      <p className={`text-xl font-black mt-1 ${emphasis ? 'text-paycor-orange' : positive === false ? 'text-red-600' : positive === true ? 'text-paycor-green' : 'text-paycor-charcoal'}`}>{value}</p>
+    </div>
+  );
+}
+
+function ExecutiveMetric({
+  label,
+  value,
+  capitalize = false,
+}: {
+  label: string;
+  value: string;
+  capitalize?: boolean;
+}) {
+  return (
+    <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50 shadow-sm">
+      <p className="text-[9px] uppercase tracking-wider font-bold text-paycor-grey">{label}</p>
+      <p className={`text-xl font-black mt-1 text-paycor-charcoal ${capitalize ? 'capitalize' : ''}`}>{value}</p>
+    </div>
+  );
+}
+
+function EvidenceBadge({ evidence }: { evidence: 'direct' | 'influenced' | 'correlated' }) {
+  const styles = {
+    direct: 'bg-emerald-50 text-emerald-700 border-emerald-250',
+    influenced: 'bg-amber-50 text-amber-700 border-amber-250',
+    correlated: 'bg-sky-50 text-sky-700 border-sky-250',
+  };
+  return <span className={`border rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${styles[evidence]}`}>{evidence}</span>;
 }

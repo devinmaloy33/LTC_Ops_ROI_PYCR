@@ -1,107 +1,118 @@
-import { GoogleGenAI } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
+import { getGemini } from '@/lib/gemini';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      facilityName,
-      baselineVbpStars,
-      projectedVbpStars,
-      headcount,
-      hourlyRate,
-      turnoverRate,
-      rnTurnover,
-      totalFines,
-      healthDeficiencies,
-      pbjHours,
-      overtimeHours,
-      annualMedicareBilling,
-      weeklyAgencyHours,
-      agencyHourlyRate,
-      avgResidentValue,
-      softwareCost,
-      pbjAuditFailureActive,
+      mode,
+      facility,
+      facilityResults,
+      portfolioResults,
+      scenario,
+      assumptions,
       proposerName,
       proposerTitle,
-      targetAudience
+      targetAudience,
     } = body;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    if (!facility || !facilityResults || !assumptions) {
       return NextResponse.json(
-        { error: 'Gemini API key is not configured. Please add GEMINI_API_KEY to your environment variables.' },
-        { status: 500 }
+        { error: 'Missing facility, results or assumptions.' },
+        { status: 400 },
       );
     }
 
-    const ai = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
+    const isPortfolio = mode === 'portfolio';
+    const results = isPortfolio ? portfolioResults : facilityResults;
+    if (!results) {
+      return NextResponse.json(
+        { error: 'Missing calculated results.' },
+        { status: 400 },
+      );
+    }
 
-    const isDefensiveMode = baselineVbpStars >= 4;
-    const starDelta = projectedVbpStars - baselineVbpStars;
+    const ai = getGemini();
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
     const prompt = `
-    You are an elite healthcare operations and financial strategy consultant specializing in Long-Term Care (LTC) and Skilled Nursing Facilities (SNFs).
-    
-    Generate a board-ready, high-impact Executive Advisory Report addressed to the target audience: **${targetAudience || 'C-Suite Executive / CFO'}**.
-    
-    This report is prepared by **${proposerName || 'Healthcare Strategy Consultant'}**, **${proposerTitle || 'Enterprise Sales Executive'}**, focusing on **${facilityName || 'the Facility'}**.
-    
-    ### Key Inputs & Facility Metrics:
-    - **Facility Name**: ${facilityName || 'Silver Maple Health & Rehab'}
-    - **Current CMS Rating**: ${baselineVbpStars} Stars
-    - **Targeted CMS Rating**: ${projectedVbpStars} Stars
-    - **Strategic Mode**: ${isDefensiveMode ? 'Defensive Strategy (Mitigating Risks & Protecting Ratings)' : `Growth Strategy (Gaining ${starDelta} Stars & Expanding Market Share)`}
-    - **Total Nursing Headcount**: ${headcount}
-    - **Nursing Turnover Rate**: ${turnoverRate}% (RN-Specific Turnover: ${rnTurnover}%)
-    - **Hourly Nursing Wage (Baseline)**: $${hourlyRate}/hr
-    - **CMS Health Deficiencies**: ${healthDeficiencies} deficiencies
-    - **Recent CMS Fines/Penalties**: $${(totalFines || 0).toLocaleString()}
-    - **PBJ Audit Preparation Burden**: ${pbjHours} hours/month
-    - **Nursing Overtime Burden**: ${overtimeHours} hours/year
-    - **Agency/Registry Utilization**: ${weeklyAgencyHours} hours/week at $${agencyHourlyRate}/hr
-    - **Annual Medicare Billing**: $${(annualMedicareBilling || 0).toLocaleString()}
-    - **Average Monthly Resident Value**: $${(avgResidentValue || 0).toLocaleString()}
-    - **Proposed Solution Software Cost**: $${(softwareCost || 0).toLocaleString()}
-    - **PBJ Audit Active Penalty Risk**: ${pbjAuditFailureActive ? 'CRITICAL RISK / ACTIVATED PENALTY (Estimated 6-Resident Medicare decertification equivalent loss)' : 'Standard Risk'}
+You are a senior healthcare workforce, financial-value and long-term care operations consultant preparing a customer-facing advisory for Paycor.
 
-    ### Strategic Context:
-    The facility is trying to reconcile their operational leakages (turnover, agency, overtime, PBJ audit risks) with their growth or protection strategy.
-    
-    ### Report Structure Requirements:
-    Please generate a cohesive, professional report with the following 4 sections. Use clean markdown. Avoid self-referencing and avoid generic filler.
-    
-    1. **Executive Synthesis**: A high-impact opening summary tailored to the ${targetAudience}. Connect the operational leaks (especially the ${turnoverRate}% turnover and ${weeklyAgencyHours} hrs/week agency dependencies) directly to CMS rating pressure and financial risk.
-    2. **The Clinical-Financial Correlation**: Detail how RN and general nursing turnover (${rnTurnover}% / ${turnoverRate}%) impacts clinical quality scores, health inspection audits (discuss the ${healthDeficiencies} deficiencies and $${(totalFines || 0).toLocaleString()} fines), and why improving retention is the precursor to achieving the targeted ${projectedVbpStars}-Star rating.
-    3. **Operational Leakage Audit**: Conduct a brief financial triage of their baseline leaks (Turnover cost, Overtime cost, Agency cost, PBJ Compliance admin costs) and show how mitigating these is not just a saving, but a self-funding mechanism for the proposed $${(softwareCost || 0).toLocaleString()} software.
-    4. **Board-Ready Recommendations & Next Steps**: Outline 3-4 specific tactical actions. Frame them as a solid business case for immediate investment. Keep the tone professional, direct, numbers-driven, and highly persuasive.
-    
-    Maintain a highly polished, analytical corporate tone. Be specific, use exact numbers from the metrics provided, and avoid sales-pitch clichés. Use bold accents and bullet lists to make it highly readable.
-    `;
+Your task is to EXPLAIN the verified calculator outputs below. Do not create new savings estimates, outcome percentages, clinical claims, CMS penalties, census assumptions or guarantees. Do not imply that Paycor alone causes improvements in turnover, agency use, CMS ratings, census, reimbursement or quality outcomes.
+
+Required causation language:
+- "Direct" means customer-measured administrative or technology cost that can be traced to a workflow or confirmed contract.
+- "Paycor-influenced" means Paycor capabilities can contribute to the outcome, but leadership, adoption, compensation, labor supply, census, acuity, culture and clinical operations also matter.
+- "Correlated strategic upside" means a downstream possibility and must remain separate from base ROI.
+- CMS Five-Star ratings and the Skilled Nursing Facility Value-Based Purchasing (SNF VBP) Program are separate programs.
+
+Prepared by: ${proposerName || 'Paycor Consultant'}${proposerTitle ? `, ${proposerTitle}` : ''}
+Audience: ${targetAudience || 'Executive Leadership Team'}
+Analysis mode: ${isPortfolio ? 'Multi-facility portfolio' : 'Single facility'}
+Scenario: ${scenario}
+
+Facility context:
+${JSON.stringify(facility, null, 2)}
+
+Verified calculated results:
+${JSON.stringify(results, null, 2)}
+
+Editable methodology assumptions:
+${JSON.stringify(assumptions, null, 2)}
+
+Write a concise, board-ready report in clean markdown with these sections:
+
+1. Executive Synthesis
+- State the current operating opportunity, annual Paycor-influenced benefit, annual investment, net annual benefit, net ROI and payback period exactly as calculated.
+- Distinguish strategic upside from base ROI.
+
+2. Operational Value Findings
+- Explain turnover, overtime premium, agency premium, PBJ administration and technology-consolidation value.
+- Make clear that overtime models the 0.5x premium and agency models the premium above internal hourly labor.
+
+3. Capability-to-Outcome Map
+- Map recruiting, onboarding, scheduling, time and attendance, payroll/HR, learning, performance/engagement and analytics to the relevant outcomes.
+- Use many-to-many relationships where appropriate.
+- Avoid saying a capability guarantees an outcome.
+
+4. CMS, Census and SNF VBP Context
+- Explain that CMS Overall, Health Inspection, Staffing and Quality Measure ratings are Five-Star components.
+- Explain that SNF VBP is separate and that any modeled value is strategic upside.
+- Do not invent a PBJ penalty or assert that a rating change automatically creates referrals.
+
+5. Recommended Validation and Next Steps
+- List the prospect data that should be validated before final approval: turnover replacement costs, overtime detail, agency invoices, PBJ labor, retiring contracts, Medicare FFS Part A revenue, and implementation scope.
+- Recommend a post-implementation measurement plan.
+
+6. Methodology Disclosure
+- State that results are planning estimates, not guarantees.
+- Explain that the AI did not calculate or alter the financial values; it only interpreted the supplied calculator outputs.
+
+Tone: professional, analytical, customer-ready and direct. Use exact figures from the calculated results. Avoid sales clichés and unsupported superlatives.
+`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model,
       contents: prompt,
       config: {
-        temperature: 0.2
-      }
+        temperature: 0.15,
+      },
     });
 
-    const reportText = response.text || 'Unable to generate strategy report at this time. Please try again.';
-
-    return NextResponse.json({ advisory: reportText });
+    return NextResponse.json({
+      advisory:
+        response.text ||
+        'The advisory could not be generated. Please review the verified calculator report.',
+    });
   } catch (error: any) {
-    console.error('Failed to generate AI strategic advisory:', error);
+    console.error('Failed to generate advisory:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal server error while generating AI strategy' },
-      { status: 500 }
+      {
+        error:
+          error?.message ||
+          'Internal server error while generating the advisory.',
+      },
+      { status: 500 },
     );
   }
 }
