@@ -1,0 +1,6 @@
+{
+  "name": "LTC ROI Calculator",
+  "description": "Calculate Return on Investment, PBJ compliance impact, Value-Based Purchasing (VBP) star rating benefits, and turnover savings for Long-Term Care facilities with Paycor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-sans), "Myriad Pro", Arial, sans-serif;
+  --font-cursive: var(--font-cursive), "Jenna Sue Pro", "Jenna Sue", cursive;
+  
+  /* Paycor Brand Colors */
+  /* Primary */
+  --color-paycor-orange: #F58220; /* Pantone 158 */
+  --color-paycor-charcoal: #3B4446; /* Pantone 446 */
+  --color-paycor-medium-grey: #54585A; /* Pantone 425 */
+  --color-paycor-grey: #888B8D; /* Pantone 423 */
+  --color-paycor-white: #FFFFFF;
+  
+  /* Secondary */
+  --color-paycor-red-orange: #E03C11; /* Pantone 1665 */
+  --color-paycor-amber: #F1B326; /* Pantone 143 */
+  --color-paycor-yellow: #EDD12A; /* Pantone 7404 */
+  --color-paycor-navy: #002D62; /* Pantone 648 */
+  --color-paycor-light-grey: #B2B4B2; /* Pantone 421 */
+  --color-paycor-border-grey: #D6D7D9; /* Pantone 427 */
+  --color-paycor-bg-light: #E5E6E4; /* Pantone 663 */
+  
+  /* Tertiary */
+  --color-paycor-green: #388E3C; /* Pantone 362 */
+  --color-paycor-sky: #009CDE; /* Pantone 2925 */
+  --color-paycor-blue: #0038A8; /* Pantone 286 */
+  --color-paycor-purple: #51247A; /* Pantone 268 */
+}
+
+@utility font-jennasue {
+  font-family: var(--font-cursive), "Jenna Sue Pro", "Jenna Sue", cursive;
+  font-weight: 400 !important;
+  font-kerning: normal;
+  letter-spacing: 0.05em;
+}
+
+/* Ensure minimum text size is no smaller than 6pt (approx 8px) as per guidelines */
+body {
+  font-size: 14px;
+}
