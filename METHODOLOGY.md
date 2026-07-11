@@ -1,4 +1,4 @@
-# LTC Operational ROI Methodology v2
+# LTC Operational ROI Methodology v4
 
 ## Product intent
 
@@ -115,3 +115,39 @@ The mapping is intentionally many-to-many.
 - CMS Payroll-Based Journal staffing data submission: https://www.cms.gov/medicare/quality/nursing-home-improvement/staffing-data-submission-pbj
 
 The CMS sources establish regulatory context and program definitions. They do not validate the calculator's scenario improvement percentages. Scenario rates must be replaced with prospect actuals or validated Paycor customer evidence whenever available.
+
+## CMS data integrity and provenance
+
+The v3 data layer imports only non-null values reported by the CMS Nursing Home General Information dataset. Missing CMS fields are not replaced with hidden averages. Employee headcount and facility financial inputs remain prospect-entered.
+
+Each material input is classified as CMS-reported, prospect-entered, consultant-modeled, calculated, researched or illustrative default. The customer report reproduces this provenance so reviewers can distinguish authoritative external data from discovery inputs and scenario assumptions.
+
+The calculator keeps the CMS Five-Star Quality Rating System separate from the Skilled Nursing Facility Value-Based Purchasing Program. Five-Star component ratings can be imported from the provider dataset. Facility-specific Medicare FFS Part A revenue and confidential SNF VBP feedback are not inferred from the provider dataset.
+
+## Guided estimate governance — v4
+
+When a prospect attendee does not know a material input, the calculator can generate a disclosed planning estimate rather than leaving the field blank or silently applying an industry average.
+
+The estimator uses CMS census and staffing context where available, plus editable operating drivers. It records the formula, driver values, confidence and confirmation requirement in the input provenance. Confirmed CMS or prospect values are protected from automatic replacement.
+
+Guided estimates are not treated as CMS facts. They are not guarantees and should be validated with the appropriate data owner. An estimated Paycor investment is internal planning only and blocks customer-report printing until approved pricing is entered.
+
+See `GUIDED_ESTIMATES.md` for formulas, default drivers and customer-readiness rules.
+
+## Strategic downstream presentation — v5
+
+The strategic downstream opportunity is now presented in a standalone card below Facility or Portfolio Value Reconciliation. It does not add new required inputs.
+
+The range is generated from the calculator's conservative and opportunity assumption sets. Census capacity, SNF VBP recovery and customer-entered compliance exposure may contribute to the range. CMS performance remains qualitative to avoid monetizing a rating change, implying causation or double counting referral/census value.
+
+Each module provides:
+
+- current condition
+- priority classification
+- scenario range where applicable
+- source context
+- calculation method
+- explanation of Paycor's possible influence
+- factors outside Paycor's control
+
+Three optional progressive-disclosure refinements can improve the narrative without blocking the analysis. See `STRATEGIC_DOWNSTREAM.md`.

@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
       proposerName,
       proposerTitle,
       targetAudience,
+      strategicOpportunity,
     } = body;
 
     if (!facility || !facilityResults || !assumptions) {
@@ -43,8 +44,10 @@ Your task is to EXPLAIN the verified calculator outputs below. Do not create new
 Required causation language:
 - "Direct" means customer-measured administrative or technology cost that can be traced to a workflow or confirmed contract.
 - "Paycor-influenced" means Paycor capabilities can contribute to the outcome, but leadership, adoption, compensation, labor supply, census, acuity, culture and clinical operations also matter.
-- "Correlated strategic upside" means a downstream possibility and must remain separate from base ROI.
+- "Correlated strategic opportunity" means a downstream possibility and must remain separate from base ROI.
+- Use the supplied strategicOpportunity object exactly. Do not create an additional range or monetize the CMS performance module.
 - CMS Five-Star ratings and the Skilled Nursing Facility Value-Based Purchasing (SNF VBP) Program are separate programs.
+- Respect the inputSources metadata. Never describe an illustrative default, consultant assumption or calculated value as CMS-reported or prospect-confirmed.
 
 Prepared by: ${proposerName || 'Paycor Consultant'}${proposerTitle ? `, ${proposerTitle}` : ''}
 Audience: ${targetAudience || 'Executive Leadership Team'}
@@ -59,6 +62,9 @@ ${JSON.stringify(results, null, 2)}
 
 Editable methodology assumptions:
 ${JSON.stringify(assumptions, null, 2)}
+
+Verified strategic downstream opportunity (excluded from base ROI):
+${JSON.stringify(strategicOpportunity || {}, null, 2)}
 
 Write a concise, board-ready report in clean markdown with these sections:
 
@@ -75,16 +81,21 @@ Write a concise, board-ready report in clean markdown with these sections:
 - Use many-to-many relationships where appropriate.
 - Avoid saying a capability guarantees an outcome.
 
-4. CMS, Census and SNF VBP Context
+4. Strategic Downstream Opportunity
+- Use four concise subsections: Census & Admissions Capacity, CMS Performance Context, SNF VBP Financial Exposure, and Compliance & Survey Readiness.
+- Repeat the supplied strategic range and explicitly state that it is excluded from base ROI.
 - Explain that CMS Overall, Health Inspection, Staffing and Quality Measure ratings are Five-Star components.
-- Explain that SNF VBP is separate and that any modeled value is strategic upside.
+- Explain that SNF VBP is separate and that any modeled recovery is a correlated scenario.
+- Treat CMS performance as qualitative context unless the supplied strategicOpportunity object specifically monetizes another module.
 - Do not invent a PBJ penalty or assert that a rating change automatically creates referrals.
 
 5. Recommended Validation and Next Steps
 - List the prospect data that should be validated before final approval: turnover replacement costs, overtime detail, agency invoices, PBJ labor, retiring contracts, Medicare FFS Part A revenue, and implementation scope.
 - Recommend a post-implementation measurement plan.
 
-6. Methodology Disclosure
+6. Data Provenance and Methodology Disclosure
+- Summarize which material inputs are CMS-reported, prospect-entered, consultant-modeled, calculated or still illustrative defaults.
+- State that missing CMS fields were not replaced with national averages.
 - State that results are planning estimates, not guarantees.
 - Explain that the AI did not calculate or alter the financial values; it only interpreted the supplied calculator outputs.
 

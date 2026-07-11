@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronUp, RotateCcw, ShieldCheck } from 'lucide-react';
+import HelpTooltip from './help-tooltip';
 import {
   ASSUMPTION_DEFINITIONS,
   getScenarioAssumptions,
@@ -59,20 +60,26 @@ export default function AssumptionsPanel({
   };
 
   return (
-    <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm overflow-hidden animate-fadeIn">
+    <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="w-full p-5 flex items-center justify-between gap-4 text-left cursor-pointer outline-none hover:bg-slate-50/50 transition-colors"
+        className="w-full p-5 flex items-center justify-between gap-4 text-left"
       >
         <div className="flex items-start gap-3">
           <div className="rounded-xl bg-paycor-orange/10 p-2 text-paycor-orange">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-extrabold text-paycor-charcoal">
-              Assumptions, Attribution &amp; Evidence
-            </h2>
+            <div className="flex items-center flex-wrap">
+              <h2 className="text-sm font-extrabold text-paycor-charcoal">
+                Assumptions, Attribution &amp; Evidence
+              </h2>
+              <HelpTooltip 
+                content="Scenario improvement benchmarks and Paycor's estimated attribution rates are mapped to clinical and administrative evidence. Direct matches represent solid savings; influenced/correlated classes represent multi-causal pathways." 
+                title="Assumptions &amp; Attribution"
+              />
+            </div>
             <p className="text-[11px] text-paycor-medium-grey mt-1 max-w-3xl">
               Scenario rates are editable planning assumptions—not guaranteed outcomes. Base ROI includes direct and Paycor-influenced value; correlated strategic upside remains separate.
             </p>
@@ -100,9 +107,9 @@ export default function AssumptionsPanel({
                     key={option}
                     type="button"
                     onClick={() => selectScenario(option)}
-                    className={`px-3 py-2 rounded-xl border text-xs font-bold capitalize transition cursor-pointer ${
+                    className={`px-3 py-2 rounded-xl border text-xs font-bold capitalize transition ${
                       scenario === option
-                        ? 'bg-paycor-orange text-white border-paycor-orange shadow-sm'
+                        ? 'bg-paycor-orange text-white border-paycor-orange'
                         : 'bg-white text-paycor-medium-grey border-slate-200 hover:border-paycor-orange'
                     }`}
                   >
@@ -114,7 +121,7 @@ export default function AssumptionsPanel({
             <button
               type="button"
               onClick={resetScenario}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-paycor-medium-grey hover:text-paycor-orange cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-paycor-medium-grey hover:text-paycor-orange"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Reset selected scenario
             </button>
@@ -175,7 +182,7 @@ export default function AssumptionsPanel({
                             : Number(event.target.value),
                         )
                       }
-                      className="flex-1 accent-paycor-orange cursor-pointer"
+                      className="flex-1 accent-paycor-orange"
                     />
                     <div className="w-24 relative">
                       <input

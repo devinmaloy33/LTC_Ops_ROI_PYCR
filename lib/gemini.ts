@@ -1,21 +1,16 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 
-let aiClient: GoogleGenAI | null = null;
+let geminiClient: GoogleGenAI | null = null;
 
 export function getGemini(): GoogleGenAI {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error("GEMINI_API_KEY environment variable is missing");
+  if (!geminiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        'The GEMINI_API_KEY environment variable is required but is missing. Please set it in your environment.',
+      );
     }
-    aiClient = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+    geminiClient = new GoogleGenAI({ apiKey });
   }
-  return aiClient;
+  return geminiClient;
 }

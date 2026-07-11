@@ -1,0 +1,24 @@
+LTC ROI Strategic Asset v5
+Generated: 2026-07-11T00:07:51Z
+
+de138358d2e08688b2391032a861c28eeaefde531e0c0c913fdc5285d9006fc0  ./CMS_DATA_CONTRACT.md
+7916af69b33aa0520088c48a6f8799c1868704c3cc375ad5f6328637570b6dad  ./GUIDED_ESTIMATES.md
+ad5a2da3ecca887ea25fa01e38323e5a8db70c62a2c29479b2fba1d17f7042bf  ./METHODOLOGY.md
+e8595db3cdd1438d9af4b1a0383138b1fe73f1ae4d6fb6bcccc99dc8fc5d738a  ./README_UPLOAD.md
+fd2c28b8d7a1921f082defc56e1b19d5ddbae7acba834a0a5f49d686aa9c769e  ./STRATEGIC_DOWNSTREAM.md
+cd5e5f85f2ead8f5e176dbf2e0e2205ac16ec2c610a5982832c2dbab386d1176  ./VALIDATION.md
+1bf8bfed0fd6687ebc90d069c67fc5606cf88e2b16560aeea3fd619d2627d62b  ./app/api/advisory/route.ts
+3a855b5aa43d7981d35e7f34399f8ef555654044964da476893f485da7de3d9a  ./app/api/providers/route.ts
+58ba3d4a9e3590dc2b2770a2aa4eb1c28ddf2126b9ae799e76045efaefe88d22  ./app/page.tsx
+97dfebe2cc3833c4ed48738548dc1e7e5bfbf8d1e1a5b229c8c822fc7487dd0d  ./components/assumptions-panel.tsx
+661672fdcda99d8853f5254ccf5d6233dcc34d1cf6b0657c9d1b0f5b55bffadd  ./components/estimate-assistant.tsx
+b2db1f6ac2d39d9995457a47ae7bfa8fa743509372263531a72184c3230088b0  ./components/printable-report.tsx
+dac23b7807dce2ec89810e617cda0614e2c7ef1cb509e19fe2f1549d6d965e86  ./components/sheets-sync.tsx
+e8d78334501fb74a9c68c93fbf9e251e61f3ac806e2435ca2a0d970198e92623  ./components/strategic-opportunity-card.tsx
+603a287b82480c79ecec0194c77f87d20c6648938be11de48c20cb7ca067c581  ./lib/assumptions.ts
+9e8ce14a765ad8d282732d9048235ca46c20889ab6ceb0f162b8db2f5be95968  ./lib/calculations.ts
+6a79c7c33c8f8af9f90bacabc6e5e22e0d244bfc3279ef7c7ace46f779893c87  ./lib/gemini.ts
+d0f3ffb5999274081b270664491f27309f06e62046f7e6582d0111c43f29fd3a  ./lib/guided-estimates.ts
+dc9580e0613b7335922d7b784e574b0ad4a84faa0689d52292f99d243502f48e  ./lib/roi-types.ts
+48ae2a05c7a66b6828a23fbd421b8d65638a91554bcb7f82715e83a90ea8387b  ./lib/strategic-opportunity.ts
+313bbd12b7c02687533a9834c38c1052cd8037ad0b47b26713cbaa19e6fbad74  ./next.config.ts
