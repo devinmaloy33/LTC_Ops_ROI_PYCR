@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getD1 } from '@/db';
 import { getAdminAuthorization } from '@/lib/admin-auth';
-import { normalizeConversation, serializeVoiceCall } from '@/lib/voice-calls';
+import { persistConversationUpdate } from '@/lib/call-tracking';
+import { serializeVoiceCall } from '@/lib/voice-calls';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,20 +27,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     });
     if (!response.ok) return NextResponse.json({ error: 'The latest call status could not be retrieved.' }, { status: 502 });
     const payload = await response.json() as Record<string, unknown>;
-    const normalized = normalizeConversation(payload);
-    const terminal = normalized.status === 'done' || normalized.status === 'failed';
-    const now = Date.now();
-    await db.prepare(`
-      UPDATE voice_calls SET status = ?, transcript_json = ?, summary = ?, call_successful = ?,
-        duration_seconds = ?, cost_credits = ?, ended_at = CASE WHEN ? THEN COALESCE(ended_at, ?) ELSE ended_at END,
-        failure_reason = CASE WHEN ? THEN COALESCE(failure_reason, 'ElevenLabs reported a failed call.') ELSE failure_reason END,
-        updated_at = ? WHERE id = ?
-    `).bind(
-      normalized.status, JSON.stringify(normalized.transcript), normalized.summary || null,
-      normalized.successful === null ? null : normalized.successful ? 1 : 0,
-      normalized.durationSeconds, normalized.costCredits, terminal ? 1 : 0, now,
-      normalized.status === 'failed' ? 1 : 0, now, id,
-    ).run();
+    await persistConversationUpdate({ db, callId: id, payload, source: 'poll' });
     const updated = await db.prepare('SELECT * FROM voice_calls WHERE id = ?').bind(id).first<Record<string, unknown>>();
     return NextResponse.json({ call: serializeVoiceCall(updated || {}) });
   } catch (error) {

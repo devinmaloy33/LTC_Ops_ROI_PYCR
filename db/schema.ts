@@ -94,6 +94,8 @@ export const voiceCalls = sqliteTable(
     id: text('id').primaryKey(),
     ccn: text('ccn').notNull().references(() => facilities.ccn, { onDelete: 'cascade' }),
     campaignId: text('campaign_id').references(() => outreachCampaigns.id, { onDelete: 'set null' }),
+    campaignTouchDay: integer('campaign_touch_day'),
+    callBriefJson: text('call_brief_json').notNull().default('{}'),
     creatorEmail: text('creator_email').notNull(),
     phoneNumber: text('phone_number').notNull(),
     persona: text('persona').notNull(),
@@ -105,6 +107,7 @@ export const voiceCalls = sqliteTable(
     agentPhoneNumberId: text('agent_phone_number_id').notNull(),
     conversationId: text('conversation_id'),
     providerCallSid: text('provider_call_sid'),
+    agentVersionId: text('agent_version_id'),
     status: text('status').notNull().default('queued'),
     transcriptJson: text('transcript_json').notNull().default('[]'),
     summary: text('summary'),
@@ -115,8 +118,18 @@ export const voiceCalls = sqliteTable(
     capturedContactTitle: text('captured_contact_title'),
     capturedContactEmail: text('captured_contact_email'),
     capturedContactExtension: text('captured_contact_extension'),
+    connectionOutcome: text('connection_outcome'),
+    phoneTreePath: text('phone_tree_path'),
+    voicemailLeft: integer('voicemail_left', { mode: 'boolean' }).notNull().default(false),
+    dataCollectionJson: text('data_collection_json').notNull().default('{}'),
+    evaluationsJson: text('evaluations_json').notNull().default('{}'),
     appointmentStatus: text('appointment_status').notNull().default('none'),
     appointmentDetails: text('appointment_details'),
+    preferredDay: text('preferred_day'),
+    preferredTimeWindow: text('preferred_time_window'),
+    preferredTimezone: text('preferred_timezone'),
+    followUpPermission: integer('follow_up_permission', { mode: 'boolean' }),
+    autoExtractedAt: integer('auto_extracted_at', { mode: 'timestamp_ms' }),
     outcomeNotes: text('outcome_notes'),
     optedOut: integer('opted_out', { mode: 'boolean' }).notNull().default(false),
     failureReason: text('failure_reason'),
@@ -131,6 +144,18 @@ export const voiceCalls = sqliteTable(
     uniqueIndex('voice_calls_conversation_uidx').on(table.conversationId),
     index('voice_calls_status_idx').on(table.status),
   ],
+);
+
+export const voiceWebhookEvents = sqliteTable(
+  'voice_webhook_events',
+  {
+    id: text('id').primaryKey(),
+    eventType: text('event_type').notNull(),
+    conversationId: text('conversation_id'),
+    eventTimestamp: integer('event_timestamp').notNull(),
+    receivedAt: integer('received_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [index('voice_webhook_conversation_idx').on(table.conversationId)],
 );
 
 export const doNotCallNumbers = sqliteTable(

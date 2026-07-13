@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Activity, AlertTriangle, ArrowLeft, Ban, Bot, Building2, CalendarCheck, Check,
   CheckCircle2, Clipboard, Clock3, Download, FileText, Headphones, Loader2,
-  LogOut, Mail, Phone, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users, XCircle,
+  ExternalLink, LogOut, Mail, Phone, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users, XCircle,
 } from 'lucide-react';
 import { CRITICAL_INPUT_LABELS } from '@/lib/readiness';
 import { OUTREACH_PERSONAS, OutreachCampaign, campaignToPlainText } from '@/lib/outreach';
@@ -15,10 +15,10 @@ type FacilitySummary = {
   overallRating: number | null; staffingRating: number | null; healthInspectionRating: number | null; qualityMeasureRating: number | null;
   sessionCount: number; downloadCount: number; isComplete: boolean; missingFields: string[];
   lastActivityAt: number; lastDownloadedAt: number | null;
-  voiceCallCount: number; pendingAppointmentCount: number; latestCallStatus: string | null;
+  voiceCallCount: number; pendingAppointmentCount: number; confirmedAppointmentCount: number; latestCallStatus: string | null;
 };
 type FacilityListResponse = {
-  summary: { facilities: number; complete: number; needsCompletion: number; downloaded: number; voiceCalls: number; appointmentsPending: number };
+  summary: { facilities: number; complete: number; needsCompletion: number; downloaded: number; voiceCalls: number; appointmentsPending: number; appointmentsConfirmed: number };
   states: string[]; facilities: FacilitySummary[]; error?: string;
 };
 type OutreachFact = { id: string; label: string; value: string; source: string };
@@ -27,13 +27,18 @@ type SavedCampaign = {
   selectedFacts: OutreachFact[]; campaign: OutreachCampaign; model: string;
 };
 type VoiceCall = {
-  id: string; ccn: string; campaignId: string | null; phoneNumber: string; persona: string;
+  id: string; ccn: string; campaignId: string | null; campaignTouchDay: number | null; phoneNumber: string; persona: string;
+  callBrief: { opener?: string; voicemail?: string; calendlyUrl?: string; appointmentLength?: string; selectedFacts?: OutreachFact[]; discoveryQuestions?: string[]; objectionResponses?: Array<{ objection: string; response: string }> };
   knownContactName: string | null; knownContactTitle: string | null; knownContactEmail: string | null; knownContactExtension: string | null;
   conversationId: string | null; providerCallSid: string | null; status: string;
   transcript: Array<{ role: string; text: string; atSeconds: number | null }>; summary: string | null;
   callSuccessful: boolean | null; durationSeconds: number | null; costCredits: number | null;
   capturedContactName: string | null; capturedContactTitle: string | null; capturedContactEmail: string | null; capturedContactExtension: string | null;
+  connectionOutcome: string | null; phoneTreePath: string | null; voicemailLeft: boolean;
+  dataCollection: Record<string, unknown>; evaluations: Record<string, unknown>; agentVersionId: string | null;
   appointmentStatus: 'none'|'pending'|'confirmed'|'declined'; appointmentDetails: string | null;
+  preferredDay: string | null; preferredTimeWindow: string | null; preferredTimezone: string | null;
+  followUpPermission: boolean | null; autoExtractedAt: number | null;
   outcomeNotes: string | null; optedOut: boolean; failureReason: string | null;
   complianceAttestedAt: number; startedAt: number | null; endedAt: number | null; createdAt: number; updatedAt: number;
 };
@@ -96,7 +101,7 @@ export default function AdminDashboard({ userName, userEmail, signOutPath }: { u
     } finally { setDetailLoading(false); }
   }, []);
 
-  const summary = data?.summary || { facilities: 0, complete: 0, needsCompletion: 0, downloaded: 0, voiceCalls: 0, appointmentsPending: 0 };
+  const summary = data?.summary || { facilities: 0, complete: 0, needsCompletion: 0, downloaded: 0, voiceCalls: 0, appointmentsPending: 0, appointmentsConfirmed: 0 };
 
   return (
     <main className="min-h-screen bg-[#f3f4f3] text-paycor-charcoal">
@@ -118,13 +123,14 @@ export default function AdminDashboard({ userName, userEmail, signOutPath }: { u
       </header>
 
       <div className="mx-auto max-w-[1500px] space-y-6 px-5 py-7">
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
           <SummaryCard icon={<Building2 />} label="Facilities looked up" value={summary.facilities} />
           <SummaryCard icon={<Clock3 />} label="Needs completion" value={summary.needsCompletion} tone="amber" />
           <SummaryCard icon={<CheckCircle2 />} label="Completed" value={summary.complete} tone="green" />
           <SummaryCard icon={<Download />} label="Downloaded" value={summary.downloaded} tone="blue" />
           <SummaryCard icon={<Headphones />} label="Outbound calls" value={summary.voiceCalls} />
           <SummaryCard icon={<CalendarCheck />} label="Appointments pending" value={summary.appointmentsPending} tone="amber" />
+          <SummaryCard icon={<CalendarCheck />} label="Appointments confirmed" value={summary.appointmentsConfirmed} tone="green" />
         </section>
 
         {error && <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><XCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
@@ -281,6 +287,7 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
   const [knownContactEmail, setKnownContactEmail] = useState('');
   const [knownContactExtension, setKnownContactExtension] = useState('');
   const [campaignId, setCampaignId] = useState('');
+  const [campaignTouchDay, setCampaignTouchDay] = useState<1|3|7>(1);
   const [businessLineConfirmed, setBusinessLineConfirmed] = useState(false);
   const [lawfulContactConfirmed, setLawfulContactConfirmed] = useState(false);
   const [aiDisclosureConfirmed, setAiDisclosureConfirmed] = useState(false);
@@ -291,6 +298,8 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
   const [notice, setNotice] = useState('');
 
   const selected = useMemo(() => calls.find((call) => call.id === selectedId) || calls[0] || null, [calls, selectedId]);
+  const selectedCampaign = useMemo(() => detail.campaigns.find((campaign) => campaign.id === campaignId) || null, [detail.campaigns, campaignId]);
+  const selectedTouch = useMemo(() => selectedCampaign?.campaign.touches.find((touch) => touch.day === campaignTouchDay) || null, [selectedCampaign, campaignTouchDay]);
   const [outcome, setOutcome] = useState({
     capturedContactName: '', capturedContactTitle: '', capturedContactEmail: '', capturedContactExtension: '',
     appointmentStatus: 'none' as VoiceCall['appointmentStatus'], appointmentDetails: '', outcomeNotes: '',
@@ -345,6 +354,7 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
         body: JSON.stringify({
           ccn: facility.ccn, phoneNumber, persona: resolvedPersona, knownContactName, knownContactTitle,
           knownContactEmail, knownContactExtension, campaignId: campaignId || undefined,
+          campaignTouchDay: campaignId ? campaignTouchDay : undefined,
           businessLineConfirmed, lawfulContactConfirmed, aiDisclosureConfirmed,
         }),
       });
@@ -392,7 +402,7 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
   return (
     <section className="rounded-3xl border border-sky-200 bg-sky-50/40 p-5 lg:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-3"><div className="rounded-2xl bg-paycor-navy p-2.5 text-white"><Bot className="h-5 w-5" /></div><div><h3 className="text-base font-black">ElevenLabs outbound voice agent</h3><p className="mt-1 max-w-3xl text-xs leading-relaxed text-paycor-medium-grey">Place one manually approved call, navigate a facility phone tree, ask for the right contact, and request an appointment. Calls are never sent in batches.</p></div></div>
+        <div className="flex items-start gap-3"><div className="rounded-2xl bg-paycor-navy p-2.5 text-white"><Bot className="h-5 w-5" /></div><div><h3 className="text-base font-black">ElevenLabs outbound voice agent</h3><p className="mt-1 max-w-3xl text-xs leading-relaxed text-paycor-medium-grey">Place one manually approved call, navigate a facility phone tree, use a selected cadence touch, and request a 30-minute Calendly appointment. Calls are never sent in batches.</p></div></div>
         <div className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-[10px] font-bold text-sky-800"><ShieldCheck className="mr-1 inline h-3.5 w-3.5" />Text, status, and outcomes are stored here; this dashboard does not store call audio.</div>
       </div>
 
@@ -411,8 +421,18 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
             <FieldLabel label="Known title (optional)"><input value={knownContactTitle} onChange={(event) => setKnownContactTitle(event.target.value)} className="admin-input" /></FieldLabel>
             <FieldLabel label="Known email (optional)"><input value={knownContactEmail} onChange={(event) => setKnownContactEmail(event.target.value)} className="admin-input" type="email" /></FieldLabel>
             <FieldLabel label="Known extension (optional)"><input value={knownContactExtension} onChange={(event) => setKnownContactExtension(event.target.value)} className="admin-input" /></FieldLabel>
-            <FieldLabel label="Link saved cadence (optional)"><select value={campaignId} onChange={(event) => setCampaignId(event.target.value)} className="admin-input"><option value="">No linked cadence</option>{detail.campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.persona} · {new Date(campaign.createdAt).toLocaleDateString()}</option>)}</select></FieldLabel>
+            <FieldLabel label="Link saved cadence (optional)"><select value={campaignId} onChange={(event) => { setCampaignId(event.target.value); setCampaignTouchDay(1); }} className="admin-input"><option value="">No linked cadence</option>{detail.campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.persona} · {new Date(campaign.createdAt).toLocaleDateString()}</option>)}</select></FieldLabel>
+            {campaignId && <FieldLabel label="Cadence touch"><select value={campaignTouchDay} onChange={(event) => setCampaignTouchDay(Number(event.target.value) as 1|3|7)} className="admin-input"><option value={1}>Day 1</option><option value={3}>Day 3</option><option value={7}>Day 7</option></select></FieldLabel>}
           </div>
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-[10px] leading-relaxed text-sky-950">
+            <div className="flex flex-wrap items-center justify-between gap-2"><strong>30-minute scheduling</strong><a href="https://calendly.com/dmaloy-paycor/30min" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-extrabold text-sky-800">Open Calendly <ExternalLink className="h-3 w-3" /></a></div>
+            <p className="mt-1">The agent asks for this meeting length. If direct calendar booking is unavailable, it captures the preferred day, time window, timezone, and follow-up permission for you.</p>
+          </div>
+          {selectedTouch && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[10px]">
+            <div className="flex items-center justify-between gap-2"><strong>Call brief preview · Day {selectedTouch.day}</strong><span className="text-paycor-grey">{selectedCampaign?.selectedFacts.length || 0} approved facts</span></div>
+            <p className="mt-2 leading-relaxed text-paycor-medium-grey"><strong>Opener:</strong> {selectedTouch.liveCallOpener}</p>
+            <p className="mt-2 leading-relaxed text-paycor-medium-grey"><strong>Voicemail:</strong> {selectedTouch.voicemail}</p>
+          </div>}
           <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
             <CallAttestation checked={businessLineConfirmed} onChange={setBusinessLineConfirmed}>I verified this is a facility or other business line, not a personal or emergency number.</CallAttestation>
             <CallAttestation checked={lawfulContactConfirmed} onChange={setLawfulContactConfirmed}>I have a lawful basis to place this business call and have checked applicable consent and do-not-call requirements.</CallAttestation>
@@ -427,9 +447,15 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
           {calls.length === 0 ? <div className="mt-5 rounded-xl bg-slate-50 p-6 text-center text-xs text-paycor-grey">No calls have been placed for this facility.</div> : <>
             <div className="mt-4 flex gap-2 overflow-x-auto pb-1">{calls.map((call) => <button type="button" key={call.id} onClick={() => setSelectedId(call.id)} className={`shrink-0 rounded-xl border px-3 py-2 text-left text-[10px] ${selected?.id === call.id ? 'border-paycor-orange bg-orange-50' : 'border-slate-200'}`}><strong>{formatPhone(call.phoneNumber)}</strong><span className="ml-2 text-paycor-grey">{formatDate(call.createdAt)}</span><p className="mt-1"><CallStatus status={call.status} appointmentStatus={call.appointmentStatus} optedOut={call.optedOut} /></p></button>)}</div>
             {selected && <div className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Status" value={callStatusLabel(selected.status)} /><Metric label="Duration" value={selected.durationSeconds == null ? '—' : `${selected.durationSeconds}s`} /><Metric label="Appointment" value={appointmentLabel(selected.appointmentStatus)} /><Metric label="Result" value={selected.callSuccessful == null ? 'Not analyzed' : selected.callSuccessful ? 'Successful' : 'Unsuccessful'} /></div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6"><Metric label="Status" value={callStatusLabel(selected.status)} /><Metric label="Duration" value={selected.durationSeconds == null ? '—' : `${selected.durationSeconds}s`} /><Metric label="Connection" value={connectionOutcomeLabel(selected.connectionOutcome)} /><Metric label="Voicemail" value={selected.voicemailLeft ? 'Left' : 'No'} /><Metric label="Appointment" value={appointmentLabel(selected.appointmentStatus)} /><Metric label="Result" value={selected.callSuccessful == null ? 'Not analyzed' : selected.callSuccessful ? 'Successful' : 'Unsuccessful'} /></div>
               {selected.failureReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[10px] text-red-700"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />{selected.failureReason}</div>}
               {selected.summary && <div className="rounded-xl bg-slate-50 p-3"><p className="text-[9px] font-extrabold uppercase tracking-wider text-paycor-grey">Call summary</p><p className="mt-2 text-[11px] leading-relaxed text-paycor-medium-grey">{selected.summary}</p></div>}
+              {(selected.preferredDay || selected.preferredTimeWindow || selected.preferredTimezone || selected.phoneTreePath) && <div className="grid gap-2 sm:grid-cols-2">
+                {(selected.preferredDay || selected.preferredTimeWindow || selected.preferredTimezone) && <div className="rounded-xl bg-amber-50 p-3 text-[10px] text-amber-950"><strong>Scheduling preference</strong><p className="mt-1">{[selected.preferredDay, selected.preferredTimeWindow, selected.preferredTimezone].filter(Boolean).join(' · ')}</p><p className="mt-1">Follow-up permission: {selected.followUpPermission == null ? 'Not captured' : selected.followUpPermission ? 'Yes' : 'No'}</p></div>}
+                {selected.phoneTreePath && <div className="rounded-xl bg-sky-50 p-3 text-[10px] text-sky-950"><strong>Phone-tree path</strong><p className="mt-1">{selected.phoneTreePath}</p></div>}
+              </div>}
+              <div className="flex flex-wrap gap-2"><a href={selected.callBrief.calendlyUrl || 'https://calendly.com/dmaloy-paycor/30min'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-extrabold text-sky-800"><CalendarCheck className="h-3.5 w-3.5" />Open 30-minute Calendly</a></div>
+              {selected.callBrief.opener && <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-[10px] font-extrabold">Exact call brief used {selected.campaignTouchDay ? `· Day ${selected.campaignTouchDay}` : ''}</summary><div className="mt-3 space-y-3 text-[10px] leading-relaxed text-paycor-medium-grey"><p><strong>Opener:</strong> {selected.callBrief.opener}</p><p><strong>Voicemail:</strong> {selected.callBrief.voicemail}</p>{Boolean(selected.callBrief.selectedFacts?.length) && <ul className="list-disc space-y-1 pl-4">{selected.callBrief.selectedFacts?.map((fact) => <li key={fact.id}>{fact.label}: {fact.value} <span className="text-paycor-grey">({fact.source})</span></li>)}</ul>}</div></details>}
               <details className="rounded-xl border border-slate-200 p-3" open={selected.transcript.length > 0}><summary className="cursor-pointer text-[10px] font-extrabold">Transcript ({selected.transcript.length})</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{selected.transcript.length ? selected.transcript.map((entry, index) => <div key={`${entry.atSeconds}-${index}`} className={`rounded-xl p-2.5 text-[10px] ${entry.role === 'agent' ? 'bg-sky-50' : 'bg-slate-50'}`}><p className="font-extrabold uppercase tracking-wider text-paycor-grey">{entry.role}{entry.atSeconds == null ? '' : ` · ${Math.round(entry.atSeconds)}s`}</p><p className="mt-1 whitespace-pre-wrap leading-relaxed text-paycor-medium-grey">{entry.text}</p></div>) : <p className="text-[10px] text-paycor-grey">Transcript will appear after ElevenLabs processes the call.</p>}</div></details>
               <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-paycor-grey">Verified outcome</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><FieldLabel label="Contact found"><input className="admin-input" value={outcome.capturedContactName} onChange={(event) => setOutcome({ ...outcome, capturedContactName: event.target.value })} /></FieldLabel><FieldLabel label="Title"><input className="admin-input" value={outcome.capturedContactTitle} onChange={(event) => setOutcome({ ...outcome, capturedContactTitle: event.target.value })} /></FieldLabel><FieldLabel label="Email"><input className="admin-input" type="email" value={outcome.capturedContactEmail} onChange={(event) => setOutcome({ ...outcome, capturedContactEmail: event.target.value })} /></FieldLabel><FieldLabel label="Extension"><input className="admin-input" value={outcome.capturedContactExtension} onChange={(event) => setOutcome({ ...outcome, capturedContactExtension: event.target.value })} /></FieldLabel><FieldLabel label="Appointment status"><select className="admin-input" value={outcome.appointmentStatus} onChange={(event) => setOutcome({ ...outcome, appointmentStatus: event.target.value as VoiceCall['appointmentStatus'] })}><option value="none">Not requested / none</option><option value="pending">Requested — needs my confirmation</option><option value="confirmed">Manually confirmed</option><option value="declined">Declined</option></select></FieldLabel><FieldLabel label="Appointment details"><input className="admin-input" value={outcome.appointmentDetails} onChange={(event) => setOutcome({ ...outcome, appointmentDetails: event.target.value })} placeholder="Proposed time or follow-up needed" /></FieldLabel></div><div className="mt-3"><FieldLabel label="Outcome notes"><textarea className="admin-input resize-y" rows={3} value={outcome.outcomeNotes} onChange={(event) => setOutcome({ ...outcome, outcomeNotes: event.target.value })} /></FieldLabel></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void saveOutcome()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-paycor-orange px-4 py-2.5 text-[10px] font-extrabold text-white"><Save className="h-3.5 w-3.5" />Save verified outcome</button><button type="button" onClick={() => void markDoNotCall()} disabled={saving || selected.optedOut} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[10px] font-extrabold text-red-700 disabled:opacity-50"><Ban className="h-3.5 w-3.5" />{selected.optedOut ? 'Do not call' : 'Mark do not call'}</button></div></div>
             </div>}
@@ -469,5 +495,6 @@ function displayValue(value: unknown) { return value == null ? '—' : Number(va
 function eventLabel(type: string) { return ({ facility_applied: 'CMS facility applied', progress_updated: 'Calculator progress updated', report_opened: 'Customer report opened', report_downloaded: 'PDF report downloaded' } as Record<string,string>)[type] || type; }
 function isLiveCall(status: string) { return ['queued', 'initiated', 'in-progress', 'processing'].includes(status); }
 function callStatusLabel(status: string) { return ({ queued: 'Queued', initiated: 'Dialing', 'in-progress': 'In progress', processing: 'Processing', done: 'Completed', failed: 'Failed' } as Record<string,string>)[status] || status; }
-function appointmentLabel(status: VoiceCall['appointmentStatus']) { return ({ none: 'None', pending: 'Needs confirmation', confirmed: 'Confirmed', declined: 'Declined' } as Record<string,string>)[status] || status; }
+function appointmentLabel(status: VoiceCall['appointmentStatus']) { return ({ none: 'None', pending: 'Needs confirmation', confirmed: 'Booked / confirmed', declined: 'Declined' } as Record<string,string>)[status] || status; }
+function connectionOutcomeLabel(value: string | null) { return value ? ({ phone_tree_failed: 'Phone tree failed', receptionist_only: 'Receptionist only', transferred: 'Transferred', decision_maker_reached: 'Decision maker', voicemail_left: 'Voicemail', wrong_number: 'Wrong number', no_answer: 'No answer', do_not_call: 'Do not call' } as Record<string,string>)[value] || value : 'Not analyzed'; }
 function formatPhone(value: string) { const digits = value.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return digits.length === 10 ? `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}` : value; }

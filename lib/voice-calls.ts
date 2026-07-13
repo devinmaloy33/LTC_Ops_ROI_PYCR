@@ -1,5 +1,9 @@
 export const ACTIVE_CALL_STATUSES = ['queued', 'initiated', 'in-progress', 'processing'] as const;
 export const APPOINTMENT_STATUSES = ['none', 'pending', 'confirmed', 'declined'] as const;
+export const CONNECTION_OUTCOMES = [
+  'phone_tree_failed', 'receptionist_only', 'transferred', 'decision_maker_reached',
+  'voicemail_left', 'wrong_number', 'no_answer', 'do_not_call',
+] as const;
 
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 export type TranscriptEntry = { role: string; text: string; atSeconds: number | null };
@@ -36,22 +40,36 @@ export function normalizeConversation(payload: Record<string, unknown>) {
     analysis.transcript_summary ?? analysis.call_summary ?? analysis.summary ?? payload.summary,
     4000,
   );
-  return { status, transcript, summary, successful, durationSeconds, costCredits };
+  return {
+    status, transcript, summary, successful, durationSeconds, costCredits,
+    agentVersionId: cleanText(payload.version_id, 120) || null,
+    dataCollection: asObject(analysis.data_collection_results),
+    evaluations: asObject(analysis.evaluation_criteria_results),
+  };
 }
 
 export function serializeVoiceCall(row: Record<string, unknown>) {
   return {
     id: String(row.id), ccn: String(row.ccn), campaignId: nullableText(row.campaign_id),
+    campaignTouchDay: nullableNumber(row.campaign_touch_day), callBrief: parseObject(row.call_brief_json),
     phoneNumber: String(row.phone_number), persona: String(row.persona),
     knownContactName: nullableText(row.known_contact_name), knownContactTitle: nullableText(row.known_contact_title),
     knownContactEmail: nullableText(row.known_contact_email), knownContactExtension: nullableText(row.known_contact_extension),
     conversationId: nullableText(row.conversation_id), providerCallSid: nullableText(row.provider_call_sid),
+    agentVersionId: nullableText(row.agent_version_id),
     status: String(row.status), transcript: parseTranscript(row.transcript_json), summary: nullableText(row.summary),
     callSuccessful: row.call_successful === null || row.call_successful === undefined ? null : Boolean(row.call_successful),
     durationSeconds: nullableNumber(row.duration_seconds), costCredits: nullableNumber(row.cost_credits),
     capturedContactName: nullableText(row.captured_contact_name), capturedContactTitle: nullableText(row.captured_contact_title),
     capturedContactEmail: nullableText(row.captured_contact_email), capturedContactExtension: nullableText(row.captured_contact_extension),
+    connectionOutcome: nullableText(row.connection_outcome), phoneTreePath: nullableText(row.phone_tree_path),
+    voicemailLeft: Boolean(row.voicemail_left), dataCollection: parseObject(row.data_collection_json),
+    evaluations: parseObject(row.evaluations_json),
     appointmentStatus: String(row.appointment_status || 'none'), appointmentDetails: nullableText(row.appointment_details),
+    preferredDay: nullableText(row.preferred_day), preferredTimeWindow: nullableText(row.preferred_time_window),
+    preferredTimezone: nullableText(row.preferred_timezone),
+    followUpPermission: row.follow_up_permission === null || row.follow_up_permission === undefined ? null : Boolean(row.follow_up_permission),
+    autoExtractedAt: nullableNumber(row.auto_extracted_at),
     outcomeNotes: nullableText(row.outcome_notes), optedOut: Boolean(row.opted_out), failureReason: nullableText(row.failure_reason),
     complianceAttestedAt: Number(row.compliance_attested_at), startedAt: nullableNumber(row.started_at),
     endedAt: nullableNumber(row.ended_at), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
@@ -109,4 +127,11 @@ function parseTranscript(value: unknown): TranscriptEntry[] {
     const parsed = JSON.parse(String(value || '[]'));
     return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === 'object') as TranscriptEntry[] : [];
   } catch { return []; }
+}
+
+function parseObject(value: unknown): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(String(value || '{}'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch { return {}; }
 }

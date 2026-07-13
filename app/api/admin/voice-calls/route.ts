@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getD1 } from '@/db';
 import { getAdminAuthorization } from '@/lib/admin-auth';
+import { buildCallBrief, callBriefDynamicVariables, CAMPAIGN_TOUCH_DAYS } from '@/lib/call-brief';
 import { ACTIVE_CALL_STATUSES, cleanText, normalizeUsBusinessPhone, serializeVoiceCall } from '@/lib/voice-calls';
 
 export const dynamic = 'force-dynamic';
@@ -23,12 +24,16 @@ export async function POST(request: NextRequest) {
     const knownContactEmail = cleanText(body.knownContactEmail, 160);
     const knownContactExtension = cleanText(body.knownContactExtension, 20);
     const campaignId = cleanText(body.campaignId, 80);
+    const campaignTouchDay = Number(body.campaignTouchDay || 1);
 
     if (!/^\d{6}$/.test(ccn)) return NextResponse.json({ error: 'A valid facility CCN is required.' }, { status: 400 });
     if (!phoneNumber) return NextResponse.json({ error: 'Enter a valid U.S. business phone number.' }, { status: 400 });
     if (!persona) return NextResponse.json({ error: 'Choose the professional role the agent should request.' }, { status: 400 });
     if (knownContactEmail && !/^\S+@\S+\.\S+$/.test(knownContactEmail)) {
       return NextResponse.json({ error: 'Enter a valid contact email or leave it blank.' }, { status: 400 });
+    }
+    if (campaignId && !CAMPAIGN_TOUCH_DAYS.includes(campaignTouchDay as never)) {
+      return NextResponse.json({ error: 'Choose Day 1, Day 3, or Day 7 for the linked cadence.' }, { status: 400 });
     }
     if (body.businessLineConfirmed !== true || body.lawfulContactConfirmed !== true || body.aiDisclosureConfirmed !== true) {
       return NextResponse.json({ error: 'Confirm the business-line, lawful-contact, and AI-disclosure attestations before calling.' }, { status: 400 });
@@ -53,21 +58,34 @@ export async function POST(request: NextRequest) {
     ).bind(...ACTIVE_CALL_STATUSES, Date.now() - 4 * 60 * 60 * 1000).first();
     if (active) return NextResponse.json({ error: 'Another outbound call is still active. Sync or finish it before starting a new call.' }, { status: 409 });
 
+    const dailyCount = await db.prepare('SELECT COUNT(*) AS count FROM voice_calls WHERE created_at >= ?')
+      .bind(Date.now() - 24 * 60 * 60 * 1000).first<Record<string, unknown>>();
+    if (Number(dailyCount?.count || 0) >= 25) {
+      return NextResponse.json({ error: 'The 25-call daily safety limit has been reached.' }, { status: 429 });
+    }
+
+    let campaign: Record<string, unknown> | null = null;
     if (campaignId) {
-      const campaign = await db.prepare('SELECT id FROM outreach_campaigns WHERE id = ? AND ccn = ?').bind(campaignId, ccn).first();
+      campaign = await db.prepare('SELECT * FROM outreach_campaigns WHERE id = ? AND ccn = ?').bind(campaignId, ccn).first<Record<string, unknown>>();
       if (!campaign) return NextResponse.json({ error: 'The selected outreach campaign does not belong to this facility.' }, { status: 400 });
     }
 
     const id = crypto.randomUUID();
     const now = Date.now();
+    const callbackPhone = process.env.DEVIN_CALLBACK_PHONE || '2607971814';
+    const callBrief = buildCallBrief({
+      facilityName: String(facility.facility_name), state: String(facility.state || ''), targetRole: persona,
+      campaignId, campaignTouchDay, campaignJson: campaign?.campaign_json, selectedFacts: campaign?.selected_facts_json,
+      callbackPhone, now,
+    });
     await db.prepare(`
       INSERT INTO voice_calls (
-        id, ccn, campaign_id, creator_email, phone_number, persona,
+        id, ccn, campaign_id, campaign_touch_day, call_brief_json, creator_email, phone_number, persona,
         known_contact_name, known_contact_title, known_contact_email, known_contact_extension,
         agent_id, agent_phone_number_id, status, compliance_attested_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
     `).bind(
-      id, ccn, campaignId || null, auth.user.email, phoneNumber, persona,
+      id, ccn, campaignId || null, callBrief.campaignTouchDay, JSON.stringify(callBrief), auth.user.email, phoneNumber, persona,
       knownContactName || null, knownContactTitle || null, knownContactEmail || null, knownContactExtension || null,
       agentId, agentPhoneNumberId, now, now, now,
     ).run();
@@ -86,8 +104,10 @@ export async function POST(request: NextRequest) {
           _prospect_last_name_: prospectLast,
           _company_name_: String(facility.facility_name),
           _state_: String(facility.state || ''),
-          _devin_phone_: process.env.DEVIN_CALLBACK_PHONE || '2607971814',
+          _devin_phone_: callbackPhone,
           _prospect_email_: knownContactEmail,
+          _known_extension_: knownContactExtension,
+          ...callBriefDynamicVariables(callBrief, id),
         },
       },
     };

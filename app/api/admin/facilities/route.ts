@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       (SELECT last_downloaded_at FROM facility_engagements e WHERE e.ccn = f.ccn AND last_downloaded_at IS NOT NULL ORDER BY last_downloaded_at DESC LIMIT 1) AS last_downloaded_at,
       COALESCE((SELECT COUNT(*) FROM voice_calls v WHERE v.ccn = f.ccn), 0) AS voice_call_count,
       COALESCE((SELECT COUNT(*) FROM voice_calls v WHERE v.ccn = f.ccn AND v.appointment_status = 'pending'), 0) AS pending_appointment_count,
+      COALESCE((SELECT COUNT(*) FROM voice_calls v WHERE v.ccn = f.ccn AND v.appointment_status = 'confirmed'), 0) AS confirmed_appointment_count,
       (SELECT status FROM voice_calls v WHERE v.ccn = f.ccn ORDER BY created_at DESC LIMIT 1) AS latest_call_status
     FROM facilities f
     ORDER BY last_activity_at DESC
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
       downloaded: rows.filter((row) => row.downloadCount > 0).length,
       voiceCalls: rows.reduce((sum, row) => sum + row.voiceCallCount, 0),
       appointmentsPending: rows.reduce((sum, row) => sum + row.pendingAppointmentCount, 0),
+      appointmentsConfirmed: rows.reduce((sum, row) => sum + row.confirmedAppointmentCount, 0),
     },
     states: Array.from(new Set(rows.map((row) => row.state).filter(Boolean))).sort(),
     facilities,
@@ -68,6 +70,7 @@ function normalizeFacilityRow(row: Record<string, unknown>) {
     isComplete: Boolean(row.is_complete), missingFields: safeStringArray(row.missing_fields_json),
     lastActivityAt: Number(row.last_activity_at || 0), lastDownloadedAt: nullableNumber(row.last_downloaded_at),
     voiceCallCount: Number(row.voice_call_count || 0), pendingAppointmentCount: Number(row.pending_appointment_count || 0),
+    confirmedAppointmentCount: Number(row.confirmed_appointment_count || 0),
     latestCallStatus: row.latest_call_status ? String(row.latest_call_status) : null,
   };
 }

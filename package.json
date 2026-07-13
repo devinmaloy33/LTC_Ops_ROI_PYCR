@@ -12,9 +12,11 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "db:generate": "drizzle-kit generate",
     "test": "tsx --test tests/*.test.ts",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "agent:configure": "tsx scripts/configure-elevenlabs-agent.ts"
   },
   "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.50.0",
     "@google/genai": "*",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
