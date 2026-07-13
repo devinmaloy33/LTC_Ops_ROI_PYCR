@@ -221,7 +221,7 @@ export default function PrintableReport({
           <header className="mb-8 break-inside-avoid border-b-4 border-paycor-orange pb-6">
             <div className="flex items-start justify-between gap-5">
               <img
-                src="/paycor-empowering-leaders.jpg"
+                src="/paycor-empowering-leaders.png"
                 alt="Paycor — Empowering Leaders"
                 className="w-[140px] h-auto object-contain"
               />

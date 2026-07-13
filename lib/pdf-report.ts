@@ -86,7 +86,7 @@ export async function downloadRoiPdf(payload: PdfPayload): Promise<void> {
 
   const isPortfolio = mode === 'portfolio' && Boolean(portfolioResults);
   const doc = new jsPDF('p', 'pt', 'a4');
-  const logo = await loadPublicImageAsDataUrl('/paycor-empowering-leaders.jpg');
+  const logo = await loadPublicImageAsDataUrl('/paycor-empowering-leaders.png');
 
   const pageWidth = 595.28;
   const pageHeight = 841.89;

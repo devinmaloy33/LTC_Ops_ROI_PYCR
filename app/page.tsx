@@ -547,7 +547,7 @@ export default function LtcRoiCalculator() {
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <img
-              src="/paycor-empowering-leaders.jpg"
+              src="/paycor-empowering-leaders.png"
               alt="Paycor — Empowering Leaders"
               className="w-[165px] h-auto object-contain"
             />
