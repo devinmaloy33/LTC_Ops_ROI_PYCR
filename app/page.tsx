@@ -67,7 +67,7 @@ const TRACKED_INPUT_FIELDS = new Set<TrackedInputField>([
   'qualityMeasureRating', 'projectedOverallRating', 'healthDeficiencies', 'totalFines',
   'pbjHoursPerMonth', 'overtimeHoursPerYear', 'weeklyAgencyHours',
   'agencyHourlyRate', 'annualMedicarePartARevenue', 'avgMonthlyResidentValue',
-  'referralsPerStarLevel', 'censusResidentsProtected',
+  'referralsPerStarLevel',
   'complianceRiskExposure', 'softwareCost',
 ]);
 
@@ -99,7 +99,6 @@ const DEFAULT_FACILITY: FacilityROICalculatorInputs = {
   annualMedicarePartARevenue: 4_500_000,
   avgMonthlyResidentValue: 8750,
   referralsPerStarLevel: 2,
-  censusResidentsProtected: 0,
   complianceRiskExposure: 0,
   softwareCost: 0,
   currentTechCosts: { ...DEFAULT_TECH_COSTS },
@@ -415,7 +414,7 @@ export default function LtcRoiCalculator() {
       : {
           directOpportunity: facilityResults.totalDirectOpportunity,
           baseBenefit: facilityResults.totalPaycorInfluencedBenefit,
-          investment: facilityResults.inputs.softwareCost,
+          investment: facilityResults.softwareCost,
           netBenefit: facilityResults.netAnnualBenefit,
           roi: facilityResults.roiPercent,
           payback: facilityResults.paybackMonths,
@@ -632,7 +631,6 @@ export default function LtcRoiCalculator() {
               <NumberInput label="Annual Medicare FFS Part A Revenue" value={facility.annualMedicarePartARevenue} source={facility.inputSources?.annualMedicarePartARevenue} prefix="$" onChange={(value) => updateFacility('annualMedicarePartARevenue', value)} />
               <NumberInput label="Average Monthly Resident Value" value={facility.avgMonthlyResidentValue} source={facility.inputSources?.avgMonthlyResidentValue} prefix="$" onChange={(value) => updateFacility('avgMonthlyResidentValue', value)} />
               <NumberInput label="Referrals per Rating Level" value={facility.referralsPerStarLevel} source={facility.inputSources?.referralsPerStarLevel} onChange={(value) => updateFacility('referralsPerStarLevel', value)} />
-              <NumberInput label="Residents at Risk / Protected" value={facility.censusResidentsProtected} source={facility.inputSources?.censusResidentsProtected} onChange={(value) => updateFacility('censusResidentsProtected', value)} />
               <NumberInput label="Prospect-Estimated Compliance Exposure" value={facility.complianceRiskExposure} source={facility.inputSources?.complianceRiskExposure} prefix="$" onChange={(value) => updateFacility('complianceRiskExposure', value)} />
               <NumberInput label="Annual Paycor Investment" value={facility.softwareCost} source={facility.inputSources?.softwareCost} prefix="$" onChange={(value) => updateFacility('softwareCost', value)} />
             </div>

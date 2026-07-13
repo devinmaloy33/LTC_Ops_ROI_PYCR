@@ -69,9 +69,13 @@ interface ProviderResponse {
 
 interface CmsMetricPayload {
   facilityName?: string;
+  facilityAddress?: string;
+  city?: string;
+  zip?: string;
   ccn?: string;
   state?: string;
   chainName?: string;
+  chainFacilities?: number;
   certifiedBeds?: number;
   averageResidentsPerDay?: number;
   reportedRnStaffingHprd?: number;
@@ -134,7 +138,9 @@ const displayNumber = (
 export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
   const [state, setState] = useState('All');
   const [search, setSearch] = useState('');
+  const [chainSearch, setChainSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedChainSearch, setDebouncedChainSearch] = useState('');
   const [page, setPage] = useState(1);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedCcn, setSelectedCcn] = useState('');
@@ -158,6 +164,14 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
   }, [search]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedChainSearch(chainSearch.trim());
+      setPage(1);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [chainSearch]);
+
+  useEffect(() => {
     let active = true;
     const controller = new AbortController();
 
@@ -171,6 +185,7 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
         });
         if (state !== 'All') params.set('state', state);
         if (debouncedSearch) params.set('search', debouncedSearch);
+        if (debouncedChainSearch) params.set('chain', debouncedChainSearch);
 
         const response = await fetch(`/api/providers?${params.toString()}`, {
           signal: controller.signal,
@@ -207,7 +222,7 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
       active = false;
       controller.abort();
     };
-  }, [state, debouncedSearch, page]);
+  }, [state, debouncedSearch, debouncedChainSearch, page]);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.ccn === selectedCcn),
@@ -232,20 +247,30 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
 
     const inputSources: FacilityInputSources = {
       facilityName: cmsSource('provider_name'),
-      ccn: cmsSource('cms_certification_number_ccn'),
+      facilityAddress: cmsSource('provider_address'),
+      city: cmsSource('citytown'),
       state: cmsSource('state'),
+      zip: cmsSource('zip_code'),
+      ccn: cmsSource('cms_certification_number_ccn'),
     };
 
     const payload: CmsMetricPayload = {
       ccn: selectedProvider.ccn,
       state: selectedProvider.state,
-      facilityName: `${selectedProvider.facilityName} - ${selectedProvider.address}, ${selectedProvider.city}, ${selectedProvider.state}`,
+      facilityName: selectedProvider.facilityName,
+      facilityAddress: selectedProvider.address,
+      city: selectedProvider.city,
+      zip: selectedProvider.zip,
+      chainName: selectedProvider.chainName || '',
+      chainFacilities: selectedProvider.chainFacilities || 0,
       inputSources,
     };
 
     if (selectedProvider.chainName) {
-      payload.chainName = selectedProvider.chainName;
       inputSources.chainName = cmsSource('chain_name');
+    }
+    if (selectedProvider.chainFacilities !== null) {
+      inputSources.chainFacilities = cmsSource('number_of_facilities_in_chain');
     }
     if (selectedProvider.beds !== null) {
       payload.certifiedBeds = selectedProvider.beds;
@@ -348,7 +373,7 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-[140px_1fr] gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-[140px_1fr_1fr] gap-3">
         <label>
           <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">
             State
@@ -390,6 +415,25 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
             )}
           </div>
         </label>
+
+        <label>
+          <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">
+            Chain / operator name (optional)
+          </span>
+          <div className="relative">
+            <Building2 className="absolute left-3 top-3 w-4 h-4 text-paycor-grey" />
+            <input
+              type="text"
+              value={chainSearch}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                setChainSearch(event.target.value);
+                setSelectedCcn('');
+              }}
+              placeholder="Find facilities in a reported chain"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 py-2.5 text-sm outline-none focus:border-paycor-orange"
+            />
+          </div>
+        </label>
       </div>
 
       <div className="mt-4">
@@ -409,7 +453,7 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
             </option>
             {providers.map((provider) => (
               <option key={provider.ccn} value={provider.ccn}>
-                {provider.facilityName} — {provider.city}, {provider.state} — CCN {provider.ccn}
+                {provider.facilityName} — {provider.city}, {provider.state} — CCN {provider.ccn}{provider.chainName ? ` — ${provider.chainName}` : ''}
               </option>
             ))}
           </select>

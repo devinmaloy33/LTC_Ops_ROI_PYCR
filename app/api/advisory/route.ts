@@ -48,6 +48,9 @@ Required causation language:
 - Use the supplied strategicOpportunity object exactly. Do not create an additional range or monetize the CMS performance module.
 - CMS Five-Star ratings and the Skilled Nursing Facility Value-Based Purchasing (SNF VBP) Program are separate programs.
 - Respect the inputSources metadata. Never describe an illustrative default, consultant assumption or calculated value as CMS-reported or prospect-confirmed.
+- Structure the executive narrative invisibly in this sequence: align with the audience's role and responsibilities; connect those responsibilities to verified business context; preserve autonomy by inviting validation and a decision rather than using pressure.
+- Do not name or disclose any persuasion framework, behavioral profile, psychological label or covert technique.
+- Do not infer personality, vulnerability, emotion or private traits. Use only the stated audience role, verified inputs and calculated results.
 
 Prepared by: ${proposerName || 'Paycor Consultant'}${proposerTitle ? `, ${proposerTitle}` : ''}
 Audience: ${targetAudience || 'Executive Leadership Team'}
@@ -119,11 +122,10 @@ Tone: professional, analytical, customer-ready and direct. Use exact figures fro
     console.error('Failed to generate advisory:', error);
     return NextResponse.json(
       {
-        error:
-          error?.message ||
-          'Internal server error while generating the advisory.',
+        error: 'AI advisory is temporarily unavailable. The verified financial report remains available.',
+        code: 'ADVISORY_UNAVAILABLE',
       },
-      { status: 500 },
+      { status: 503 },
     );
   }
 }

@@ -6,147 +6,288 @@ import {
   ValueLineItem,
 } from './roi-types';
 
+const ANNUAL_WORK_HOURS = 2080;
+const WEEKS_PER_YEAR = 52;
+const MONTHS_PER_YEAR = 12;
+const OVERTIME_PREMIUM_RATE = 0.5;
+const SNF_VBP_WITHHOLD_RATE = 0.02;
+
+function finite(value: number | undefined | null): number {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function nonNegative(value: number | undefined | null): number {
+  return Math.max(0, finite(value));
+}
+
+function rate(value: number | undefined | null): number {
+  return Math.min(1, Math.max(0, finite(value)));
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + nonNegative(value), 0);
+}
+
 export function calculateFacilityROI(
-  inputs: FacilityROICalculatorInputs,
-  assumptions: ScenarioAssumptions,
+  rawInputs: FacilityROICalculatorInputs,
+  rawAssumptions: ScenarioAssumptions,
 ): FacilityROIResults {
-  const headcount = Number(inputs.headcount) || 0;
-  const turnoverRate = (Number(inputs.turnoverRate) || 0) / 100;
-  const rnTurnover = (Number(inputs.rnTurnover) || 0) / 100;
-  const hourlyRate = Number(inputs.hourlyRate) || 0;
-  const adminLoadedRate = Number(inputs.adminLoadedHourlyRate) || 0;
+  const inputs: FacilityROICalculatorInputs = {
+    ...rawInputs,
+    currentTechCosts: rawInputs.currentTechCosts ?? {
+      recruiting: 0,
+      onboarding: 0,
+      payroll: 0,
+      time: 0,
+      scheduling: 0,
+      benefits: 0,
+      lms: 0,
+      performance: 0,
+      other: 0,
+    },
+  };
 
-  const softwareCost = Number(inputs.softwareCost) || 0;
+  const assumptions: ScenarioAssumptions = {
+    ...rawAssumptions,
+    turnoverCostMultiple: nonNegative(rawAssumptions.turnoverCostMultiple),
+    turnoverImprovementRate: rate(rawAssumptions.turnoverImprovementRate),
+    turnoverPaycorAttribution: rate(rawAssumptions.turnoverPaycorAttribution),
+    overtimeReductionRate: rate(rawAssumptions.overtimeReductionRate),
+    overtimePaycorAttribution: rate(rawAssumptions.overtimePaycorAttribution),
+    agencyReductionRate: rate(rawAssumptions.agencyReductionRate),
+    agencyPaycorAttribution: rate(rawAssumptions.agencyPaycorAttribution),
+    pbjEfficiencyRate: rate(rawAssumptions.pbjEfficiencyRate),
+    pbjPaycorAttribution: rate(rawAssumptions.pbjPaycorAttribution),
+    techRetirementRate: rate(rawAssumptions.techRetirementRate),
+    referralCaptureRate: rate(rawAssumptions.referralCaptureRate),
+    snfVbpRecoveryRate: rate(rawAssumptions.snfVbpRecoveryRate),
+    complianceRiskReductionRate: rate(rawAssumptions.complianceRiskReductionRate),
+  };
 
-  const currentTechSpend = Object.values(inputs.currentTechCosts || {}).reduce(
-    (sum, val) => sum + (Number(val) || 0),
+  const headcount = nonNegative(inputs.headcount);
+  const hourlyRate = nonNegative(inputs.hourlyRate);
+  const adminLoadedHourlyRate = nonNegative(inputs.adminLoadedHourlyRate || hourlyRate);
+  const turnoverRate = Math.max(0, finite(inputs.turnoverRate)) / 100;
+
+  const annualCompensationPerEmployee = hourlyRate * ANNUAL_WORK_HOURS;
+  const estimatedCostPerTurnover =
+    annualCompensationPerEmployee * assumptions.turnoverCostMultiple;
+  const estimatedTurnoverEvents = headcount * turnoverRate;
+  const baselineTurnoverBurden = estimatedTurnoverEvents * estimatedCostPerTurnover;
+
+  // Conservative methodology: value only the 0.5x overtime premium because the
+  // underlying productive hour may still need to be covered at straight time.
+  const baselineOvertimePremium =
+    nonNegative(inputs.overtimeHoursPerYear) * hourlyRate * OVERTIME_PREMIUM_RATE;
+
+  // Conservative methodology: value only the premium paid above internal hourly labor.
+  const agencyPremiumPerHour = Math.max(
     0,
+    nonNegative(inputs.agencyHourlyRate) - hourlyRate,
+  );
+  const baselineAgencyPremium =
+    nonNegative(inputs.weeklyAgencyHours) * agencyPremiumPerHour * WEEKS_PER_YEAR;
+
+  const baselinePbjAdminCost =
+    nonNegative(inputs.pbjHoursPerMonth) *
+    MONTHS_PER_YEAR *
+    adminLoadedHourlyRate;
+
+  const totalCurrentTechSpend = sum(
+    Object.values(inputs.currentTechCosts).map((value) => finite(value)),
   );
 
-  const annualDirectTechAvoided = currentTechSpend * assumptions.retainedTechAvoidedRate;
+  const totalDirectOpportunity = sum([
+    baselineTurnoverBurden,
+    baselineOvertimePremium,
+    baselineAgencyPremium,
+    baselinePbjAdminCost,
+    totalCurrentTechSpend,
+  ]);
 
-  const TURNOVER_REPLACEMENT_MULTIPLIER = 0.25;
-  const annualSeparations = headcount * turnoverRate;
-  const turnoverBaseBurden = annualSeparations * (hourlyRate * 2080 * TURNOVER_REPLACEMENT_MULTIPLIER);
-  const annualTurnoverSavings = turnoverBaseBurden * assumptions.turnoverReductionRate;
+  const turnoverBenefit =
+    baselineTurnoverBurden *
+    assumptions.turnoverImprovementRate *
+    assumptions.turnoverPaycorAttribution;
+  const overtimeBenefit =
+    baselineOvertimePremium *
+    assumptions.overtimeReductionRate *
+    assumptions.overtimePaycorAttribution;
+  const agencyBenefit =
+    baselineAgencyPremium *
+    assumptions.agencyReductionRate *
+    assumptions.agencyPaycorAttribution;
+  const pbjBenefit =
+    baselinePbjAdminCost *
+    assumptions.pbjEfficiencyRate *
+    assumptions.pbjPaycorAttribution;
+  const retiredTechBenefit =
+    totalCurrentTechSpend * assumptions.techRetirementRate;
 
-  const overtimeHours = Number(inputs.overtimeHoursPerYear) || 0;
-  const overtimePremiumHourly = hourlyRate * 0.5;
-  const overtimeBaseBurden = overtimeHours * overtimePremiumHourly;
-  const annualOvertimeSavings = overtimeBaseBurden * assumptions.overtimeReductionRate;
+  const totalPaycorInfluencedBenefit = sum([
+    turnoverBenefit,
+    overtimeBenefit,
+    agencyBenefit,
+    pbjBenefit,
+    retiredTechBenefit,
+  ]);
 
-  const weeklyAgencyHours = Number(inputs.weeklyAgencyHours) || 0;
-  const agencyHourlyRate = Number(inputs.agencyHourlyRate) || 0;
-  const annualAgencyHours = weeklyAgencyHours * 52;
-  const agencyPremiumHourly = Math.max(0, agencyHourlyRate - hourlyRate);
-  const agencyBaseBurden = annualAgencyHours * agencyPremiumHourly;
-  const annualAgencySavings = agencyBaseBurden * assumptions.agencyReductionRate;
+  const softwareCost = nonNegative(inputs.softwareCost);
+  const netAnnualBenefit = totalPaycorInfluencedBenefit - softwareCost;
+  const roiPercent =
+    softwareCost > 0 ? (netAnnualBenefit / softwareCost) * 100 : null;
+  const benefitCostRatio =
+    softwareCost > 0 ? totalPaycorInfluencedBenefit / softwareCost : null;
+  const paybackMonths =
+    softwareCost > 0 && totalPaycorInfluencedBenefit > 0
+      ? (softwareCost / totalPaycorInfluencedBenefit) * MONTHS_PER_YEAR
+      : null;
+  const breakEvenRealizationRate =
+    softwareCost > 0 && totalPaycorInfluencedBenefit > 0
+      ? Math.min(1, softwareCost / totalPaycorInfluencedBenefit)
+      : null;
 
-  const pbjHoursPerMonth = Number(inputs.pbjHoursPerMonth) || 0;
-  const pbjAnnualHours = pbjHoursPerMonth * 12;
-  const pbjBaseBurden = pbjAnnualHours * adminLoadedRate;
-  const annualPbjSavings = pbjBaseBurden * assumptions.pbjWorkflowReductionRate;
+  const overallRating = Math.min(5, Math.max(1, finite(inputs.overallRating) || 1));
+  const projectedOverallRating = Math.min(
+    5,
+    Math.max(1, finite(inputs.projectedOverallRating) || overallRating),
+  );
+  const cmsStarDelta = Math.max(0, projectedOverallRating - overallRating);
+  const annualRevenuePerResident =
+    nonNegative(inputs.avgMonthlyResidentValue) * MONTHS_PER_YEAR;
+
+  const referralResidentsCaptured =
+    cmsStarDelta *
+    nonNegative(inputs.referralsPerStarLevel) *
+    assumptions.referralCaptureRate;
+  const censusGrowthOpportunity =
+    referralResidentsCaptured * annualRevenuePerResident;
+  // SNF VBP is deliberately separate from CMS Five-Star ratings.
+  const snfVbpWithholdExposure =
+    nonNegative(inputs.annualMedicarePartARevenue) * SNF_VBP_WITHHOLD_RATE;
+  const snfVbpRecoveryOpportunity =
+    snfVbpWithholdExposure * assumptions.snfVbpRecoveryRate;
+
+  // No invented PBJ penalty: this strategic value requires a prospect-entered exposure.
+  const complianceRiskOpportunity =
+    nonNegative(inputs.complianceRiskExposure) *
+    assumptions.complianceRiskReductionRate;
+
+  const totalStrategicUpside = sum([
+    censusGrowthOpportunity,
+    snfVbpRecoveryOpportunity,
+    complianceRiskOpportunity,
+  ]);
+  const potentialEnterpriseValue =
+    totalPaycorInfluencedBenefit + totalStrategicUpside;
 
   const valueLineItems: ValueLineItem[] = [
     {
       key: 'turnover',
-      label: 'Staff Turnover Reduction',
+      label: 'Turnover cost avoidance',
       evidenceClass: 'influenced',
-      currentBurden: turnoverBaseBurden,
-      attainableImprovement: assumptions.turnoverReductionRate,
-      paycorAttribution: 1.0,
-      annualBenefit: annualTurnoverSavings,
-      explanation: `Reduces employee separations from ${annualSeparations.toFixed(1)}/yr using a conservative ${TURNOVER_REPLACEMENT_MULTIPLIER * 100}% of fully loaded salary replacement cost benchmark.`,
+      currentBurden: baselineTurnoverBurden,
+      attainableImprovement: assumptions.turnoverImprovementRate,
+      paycorAttribution: assumptions.turnoverPaycorAttribution,
+      annualBenefit: turnoverBenefit,
       includedInBaseROI: true,
+      explanation:
+        'Recruiting, onboarding, workforce management, learning, engagement and analytics can influence retention, while leadership, compensation, labor supply and clinical operations remain material drivers.',
     },
     {
       key: 'overtime',
-      label: 'Overtime Premium Containment',
+      label: 'Overtime premium reduction',
       evidenceClass: 'influenced',
-      currentBurden: overtimeBaseBurden,
+      currentBurden: baselineOvertimePremium,
       attainableImprovement: assumptions.overtimeReductionRate,
-      paycorAttribution: 1.0,
-      annualBenefit: annualOvertimeSavings,
-      explanation: `Restricts overtime premium leak. Models only the 0.5x premium over internal hourly labor — not the base wage.`,
+      paycorAttribution: assumptions.overtimePaycorAttribution,
+      annualBenefit: overtimeBenefit,
       includedInBaseROI: true,
+      explanation:
+        'Values only the avoidable 0.5x premium and applies a Paycor contribution factor for scheduling, time visibility and exception management.',
     },
     {
       key: 'agency',
-      label: 'Agency Premium Containment',
+      label: 'Agency premium reduction',
       evidenceClass: 'influenced',
-      currentBurden: agencyBaseBurden,
+      currentBurden: baselineAgencyPremium,
       attainableImprovement: assumptions.agencyReductionRate,
-      paycorAttribution: 1.0,
-      annualBenefit: annualAgencySavings,
-      explanation: `Reclaims premium spend. Models only the premium above the standard internal rate (${(agencyHourlyRate - hourlyRate) > 0 ? `$${(agencyHourlyRate - hourlyRate).toFixed(2)}` : '$0.00'}/hr) — not the base wage.`,
+      paycorAttribution: assumptions.agencyPaycorAttribution,
+      annualBenefit: agencyBenefit,
       includedInBaseROI: true,
+      explanation:
+        'Values only the agency premium above internal hourly labor and recognizes that local labor supply, occupancy and clinical staffing strategy also drive agency use.',
     },
     {
       key: 'pbj',
-      label: 'PBJ Compliance Labor',
-      evidenceClass: 'influenced',
-      currentBurden: pbjBaseBurden,
-      attainableImprovement: assumptions.pbjWorkflowReductionRate,
-      paycorAttribution: 1.0,
-      annualBenefit: annualPbjSavings,
-      explanation: `Automates Payroll-Based Journal (PBJ) reporting and preparation. Avoids manual labor hours priced at administrative loaded rates.`,
+      label: 'PBJ administration efficiency',
+      evidenceClass: 'direct',
+      currentBurden: baselinePbjAdminCost,
+      attainableImprovement: assumptions.pbjEfficiencyRate,
+      paycorAttribution: assumptions.pbjPaycorAttribution,
+      annualBenefit: pbjBenefit,
       includedInBaseROI: true,
+      explanation:
+        'Represents reduced manual preparation, reconciliation and correction time through integrated time, payroll, employee records and reporting.',
     },
     {
-      key: 'tech',
-      label: 'Avoided Legacy Technology',
+      key: 'technology',
+      label: 'Technology consolidation opportunity',
       evidenceClass: 'direct',
-      currentBurden: currentTechSpend,
-      attainableImprovement: assumptions.retainedTechAvoidedRate,
-      paycorAttribution: 1.0,
-      annualBenefit: annualDirectTechAvoided,
-      explanation: `Eliminates or reduces overlapping or redundant point solution costs, based on the confirmed retirable percentage.`,
+      currentBurden: totalCurrentTechSpend,
+      attainableImprovement: assumptions.techRetirementRate,
+      paycorAttribution: 1,
+      annualBenefit: retiredTechBenefit,
       includedInBaseROI: true,
+      explanation:
+        'Includes only confirmed recurring systems that can be eliminated, consolidated or not renewed. It is counted once and is not also subtracted from the investment denominator.',
+    },
+    {
+      key: 'strategic',
+      label: 'Strategic downstream opportunity',
+      evidenceClass: 'correlated',
+      currentBurden: 0,
+      attainableImprovement: 0,
+      paycorAttribution: 0,
+      annualBenefit: totalStrategicUpside,
+      includedInBaseROI: false,
+      explanation:
+        'Includes customer-entered or scenario-modeled census, CMS-rating protection, SNF VBP and compliance exposure. It is displayed separately from base ROI.',
     },
   ];
 
-  const totalDirectOpportunity = currentTechSpend;
-  const totalPaycorInfluencedBenefit = valueLineItems
-    .filter((item) => item.includedInBaseROI)
-    .reduce((sum, item) => sum + item.annualBenefit, 0);
-
-  const netAnnualBenefit = totalPaycorInfluencedBenefit - softwareCost;
-
-  let roiPercent: number | null = null;
-  let benefitCostRatio: number | null = null;
-  let paybackMonths: number | null = null;
-
-  if (softwareCost > 0) {
-    roiPercent = (netAnnualBenefit / softwareCost) * 100;
-    benefitCostRatio = totalPaycorInfluencedBenefit / softwareCost;
-    paybackMonths = totalPaycorInfluencedBenefit > 0 ? (softwareCost / totalPaycorInfluencedBenefit) * 12 : null;
-  }
-
-  const referralGrowthValue =
-    (Number(inputs.referralsPerStarLevel) || 0) *
-    (Number(inputs.avgMonthlyResidentValue) || 0) *
-    12 *
-    assumptions.referralGrowthRate;
-
-  const medicarePartARevenue = Number(inputs.annualMedicarePartARevenue) || 0;
-  const snfVbpRecoveryValue = medicarePartARevenue * assumptions.retentionMedicarePartAShare;
-
-  const complianceRiskExposure = Number(inputs.complianceRiskExposure) || 0;
-  const complianceMitigationValue = complianceRiskExposure * assumptions.complianceExposureReductionRate;
-
-  const totalStrategicUpside = referralGrowthValue + snfVbpRecoveryValue + complianceMitigationValue;
-
   return {
-    inputs,
-    valueLineItems,
+    annualCompensationPerEmployee,
+    estimatedCostPerTurnover,
+    estimatedTurnoverEvents,
+    baselineTurnoverBurden,
+    baselineOvertimePremium,
+    baselineAgencyPremium,
+    baselinePbjAdminCost,
+    totalCurrentTechSpend,
     totalDirectOpportunity,
+    turnoverBenefit,
+    overtimeBenefit,
+    agencyBenefit,
+    pbjBenefit,
+    retiredTechBenefit,
     totalPaycorInfluencedBenefit,
+    softwareCost,
     netAnnualBenefit,
     roiPercent,
     benefitCostRatio,
     paybackMonths,
-    totalCurrentTechSpend: currentTechSpend,
+    breakEvenRealizationRate,
+    cmsStarDelta,
+    annualRevenuePerResident,
+    referralResidentsCaptured,
+    censusGrowthOpportunity,
+    snfVbpWithholdExposure,
+    snfVbpRecoveryOpportunity,
+    complianceRiskOpportunity,
     totalStrategicUpside,
+    potentialEnterpriseValue,
+    valueLineItems,
   };
 }
 
@@ -154,35 +295,62 @@ export function calculatePortfolioROI(
   facilities: FacilityROICalculatorInputs[],
   assumptions: ScenarioAssumptions,
 ): PortfolioROIResults {
-  const calculated = facilities.map((facility) => {
-    return {
-      inputs: facility,
-      results: calculateFacilityROI(facility, assumptions),
-    };
-  });
+  const calculatedFacilities = facilities.map((inputs) => ({
+    inputs,
+    results: calculateFacilityROI(inputs, assumptions),
+  }));
 
-  const totalHeadcount = calculated.reduce((sum, item) => sum + (Number(item.inputs.headcount) || 0), 0);
-  const totalDirectOpportunity = calculated.reduce((sum, item) => sum + item.results.totalDirectOpportunity, 0);
-  const totalPaycorInfluencedBenefit = calculated.reduce((sum, item) => sum + item.results.totalPaycorInfluencedBenefit, 0);
-  const totalSoftwareCost = calculated.reduce((sum, item) => sum + (Number(item.inputs.softwareCost) || 0), 0);
-  const totalStrategicUpside = calculated.reduce((sum, item) => sum + item.results.totalStrategicUpside, 0);
+  const totalHeadcount = sum(facilities.map((facility) => facility.headcount));
+  const weightedTurnoverRate =
+    totalHeadcount > 0
+      ? facilities.reduce(
+          (total, facility) =>
+            total + nonNegative(facility.turnoverRate) * nonNegative(facility.headcount),
+          0,
+        ) / totalHeadcount
+      : 0;
+  const weightedOverallRating =
+    totalHeadcount > 0
+      ? facilities.reduce(
+          (total, facility) =>
+            total + nonNegative(facility.overallRating) * nonNegative(facility.headcount),
+          0,
+        ) / totalHeadcount
+      : 0;
 
+  const totalDirectOpportunity = sum(
+    calculatedFacilities.map(({ results }) => results.totalDirectOpportunity),
+  );
+  const totalPaycorInfluencedBenefit = sum(
+    calculatedFacilities.map(({ results }) => results.totalPaycorInfluencedBenefit),
+  );
+  const totalSoftwareCost = sum(
+    calculatedFacilities.map(({ results }) => results.softwareCost),
+  );
   const netAnnualBenefit = totalPaycorInfluencedBenefit - totalSoftwareCost;
-
-  let roiPercent: number | null = null;
-  let benefitCostRatio: number | null = null;
-  let paybackMonths: number | null = null;
-
-  if (totalSoftwareCost > 0) {
-    roiPercent = (netAnnualBenefit / totalSoftwareCost) * 100;
-    benefitCostRatio = totalPaycorInfluencedBenefit / totalSoftwareCost;
-    paybackMonths = totalPaycorInfluencedBenefit > 0 ? (totalSoftwareCost / totalPaycorInfluencedBenefit) * 12 : null;
-  }
+  const roiPercent =
+    totalSoftwareCost > 0 ? (netAnnualBenefit / totalSoftwareCost) * 100 : null;
+  const benefitCostRatio =
+    totalSoftwareCost > 0
+      ? totalPaycorInfluencedBenefit / totalSoftwareCost
+      : null;
+  const paybackMonths =
+    totalSoftwareCost > 0 && totalPaycorInfluencedBenefit > 0
+      ? (totalSoftwareCost / totalPaycorInfluencedBenefit) * MONTHS_PER_YEAR
+      : null;
+  const breakEvenRealizationRate =
+    totalSoftwareCost > 0 && totalPaycorInfluencedBenefit > 0
+      ? Math.min(1, totalSoftwareCost / totalPaycorInfluencedBenefit)
+      : null;
+  const totalStrategicUpside = sum(
+    calculatedFacilities.map(({ results }) => results.totalStrategicUpside),
+  );
 
   return {
-    facilities: calculated,
     facilityCount: facilities.length,
     totalHeadcount,
+    weightedTurnoverRate,
+    weightedOverallRating,
     totalDirectOpportunity,
     totalPaycorInfluencedBenefit,
     totalSoftwareCost,
@@ -190,6 +358,18 @@ export function calculatePortfolioROI(
     roiPercent,
     benefitCostRatio,
     paybackMonths,
+    breakEvenRealizationRate,
     totalStrategicUpside,
+    potentialEnterpriseValue:
+      totalPaycorInfluencedBenefit + totalStrategicUpside,
+    facilities: calculatedFacilities,
   };
 }
+
+/**
+ * Backward-compatible aliases for components that still import the original names.
+ * New code should use FacilityROICalculatorInputs, FacilityROIResults and
+ * calculateFacilityROI directly.
+ */
+export type ROICalculatorInputs = FacilityROICalculatorInputs;
+export type ROICalculatorResults = FacilityROIResults;

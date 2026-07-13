@@ -2,7 +2,6 @@
 
 import React, { useMemo, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronUp, RotateCcw, ShieldCheck } from 'lucide-react';
-import HelpTooltip from './help-tooltip';
 import {
   ASSUMPTION_DEFINITIONS,
   getScenarioAssumptions,
@@ -25,6 +24,22 @@ const evidenceStyles = {
   correlated: 'bg-sky-50 text-sky-700 border-sky-200',
 };
 
+const PRIMARY_KEYS: Array<keyof ScenarioAssumptions> = [
+  'turnoverCostMultiple',
+  'turnoverImprovementRate',
+  'overtimeReductionRate',
+  'agencyReductionRate',
+  'pbjEfficiencyRate',
+  'techRetirementRate',
+];
+
+const ADVANCED_KEYS: Array<keyof ScenarioAssumptions> = [
+  'turnoverPaycorAttribution',
+  'overtimePaycorAttribution',
+  'agencyPaycorAttribution',
+  'pbjPaycorAttribution',
+];
+
 export default function AssumptionsPanel({
   scenario,
   assumptions,
@@ -32,11 +47,13 @@ export default function AssumptionsPanel({
   onAssumptionsChange,
 }: AssumptionsPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const changedCount = useMemo(() => {
     const defaults = getScenarioAssumptions(scenario);
     return ASSUMPTION_DEFINITIONS.filter(
       (definition) =>
+        [...PRIMARY_KEYS, ...ADVANCED_KEYS].includes(definition.key) &&
         Math.abs(assumptions[definition.key] - defaults[definition.key]) > 0.000001,
     ).length;
   }, [assumptions, scenario]);
@@ -59,6 +76,10 @@ export default function AssumptionsPanel({
     onAssumptionsChange(getScenarioAssumptions(scenario));
   };
 
+  const visibleDefinitions = ASSUMPTION_DEFINITIONS.filter((definition) =>
+    PRIMARY_KEYS.includes(definition.key) || (showAdvanced && ADVANCED_KEYS.includes(definition.key)),
+  );
+
   return (
     <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm overflow-hidden">
       <button
@@ -71,15 +92,9 @@ export default function AssumptionsPanel({
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center flex-wrap">
-              <h2 className="text-sm font-extrabold text-paycor-charcoal">
-                Assumptions, Attribution &amp; Evidence
-              </h2>
-              <HelpTooltip 
-                content="Scenario improvement benchmarks and Paycor's estimated attribution rates are mapped to clinical and administrative evidence. Direct matches represent solid savings; influenced/correlated classes represent multi-causal pathways." 
-                title="Assumptions &amp; Attribution"
-              />
-            </div>
+            <h2 className="text-sm font-extrabold text-paycor-charcoal">
+              Assumptions, Attribution &amp; Evidence
+            </h2>
             <p className="text-[11px] text-paycor-medium-grey mt-1 max-w-3xl">
               Scenario rates are editable planning assumptions—not guaranteed outcomes. Base ROI includes direct and Paycor-influenced value; correlated strategic upside remains separate.
             </p>
@@ -127,8 +142,18 @@ export default function AssumptionsPanel({
             </button>
           </div>
 
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col md:flex-row md:items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-extrabold text-paycor-charcoal">Keep the live conversation focused</p>
+              <p className="text-[9px] text-paycor-grey mt-1">Strategic census, SNF VBP and compliance assumptions are refined inside the Strategic Downstream Opportunity card, where their effect is visible.</p>
+            </div>
+            <button type="button" onClick={() => setShowAdvanced((value) => !value)} className="text-[10px] font-bold text-paycor-orange shrink-0">
+              {showAdvanced ? 'Hide causation guardrails' : 'Show causation guardrails'}
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {ASSUMPTION_DEFINITIONS.map((definition) => {
+            {visibleDefinitions.map((definition) => {
               const rawValue = assumptions[definition.key];
               const displayValue = definition.isPercentage
                 ? Math.round(rawValue * 1000) / 10

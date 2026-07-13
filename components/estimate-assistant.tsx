@@ -101,6 +101,13 @@ export default function EstimateAssistant({
     [facility, drivers],
   );
 
+  const activeTechnologyPepm = useMemo(
+    () => (Object.keys(drivers.techModulePepm) as Array<keyof TechCostMap>)
+      .filter((key) => drivers.activeTechModules[key])
+      .reduce((total, key) => total + drivers.techModulePepm[key], 0),
+    [drivers.techModulePepm, drivers.activeTechModules],
+  );
+
   if (!open) return null;
 
   const updateDriver = <K extends keyof GuidedEstimateDrivers>(
@@ -249,7 +256,8 @@ export default function EstimateAssistant({
             <div className="space-y-5">
               <DriverSection title="Facility sizing" description="CMS census and staffing values are used when available. All ratios remain editable.">
                 <DriverNumber label="Occupancy rate" value={drivers.occupancyRate * 100} suffix="%" onChange={(value) => updateDriver('occupancyRate', value / 100)} />
-                <DriverNumber label="Employees per resident" value={drivers.employeesPerResident} step={0.05} onChange={(value) => updateDriver('employeesPerResident', value)} />
+                <DriverNumber label="Baseline employees per resident" value={drivers.employeesPerResident} step={0.05} onChange={(value) => updateDriver('employeesPerResident', value)} />
+                <DriverNumber label="Facility-wide headcount planning multiplier" value={drivers.headcountPlanningMultiplier} step={0.1} suffix="x" onChange={(value) => updateDriver('headcountPlanningMultiplier', value)} />
                 <DriverNumber label="Nursing share of total workforce" value={drivers.nursingWorkforceShare * 100} suffix="%" onChange={(value) => updateDriver('nursingWorkforceShare', value / 100)} />
                 <DriverNumber label="Productive hours per FTE / year" value={drivers.annualProductiveHoursPerFte} onChange={(value) => updateDriver('annualProductiveHoursPerFte', value)} />
               </DriverSection>
@@ -303,7 +311,7 @@ export default function EstimateAssistant({
                 </label>
               </DriverSection>
 
-              <DriverSection title="Internal Paycor planning estimate" description="This is a temporary internal denominator only. It is blocked from customer-ready treatment until replaced with approved pricing.">
+              <DriverSection title="Internal Paycor planning estimate" description="The default is $20 PEPM with no hidden annual base fee. It remains an internal planning denominator until replaced with approved pricing.">
                 <DriverNumber label="Planning PEPM" value={drivers.planningPaycorPepm} prefix="$" onChange={(value) => updateDriver('planningPaycorPepm', value)} />
                 <DriverNumber label="Annual base fee" value={drivers.planningAnnualBaseFee} prefix="$" onChange={(value) => updateDriver('planningAnnualBaseFee', value)} />
               </DriverSection>
@@ -314,7 +322,14 @@ export default function EstimateAssistant({
             <div>
               <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-[10px] text-sky-900 mb-4 flex gap-2">
                 <Info className="w-4 h-4 shrink-0" />
-                Estimate only systems the prospect currently pays for. In the final ROI, only the confirmed retirable portion is counted as avoided annual cost.
+                Enabled full-stack assumptions total $33 PEPM. Estimate only systems the prospect currently pays for; only the confirmed consolidatable portion is counted as avoided annual cost.
+              </div>
+              <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-paycor-grey">Enabled technology estimate</p>
+                  <p className="text-[10px] text-paycor-medium-grey mt-1">The full default stack totals exactly $33 PEPM.</p>
+                </div>
+                <p className="text-xl font-black text-paycor-orange">${activeTechnologyPepm.toFixed(2)} PEPM</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {(Object.keys(drivers.techModulePepm) as Array<keyof TechCostMap>).map((key) => (
