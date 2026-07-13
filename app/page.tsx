@@ -29,6 +29,8 @@ import OperationalTranslationCard from '@/components/operational-translation-car
 import FirstUseGuide from '@/components/first-use-guide';
 import StatusQuoCard from '@/components/status-quo-card';
 import { buildExecutiveNarrative } from '@/lib/executive-narrative';
+import { trackFacilityActivity } from '@/lib/activity-client';
+import { getMissingCriticalFields } from '@/lib/readiness';
 import {
   calculateFacilityROI,
   calculatePortfolioROI,
@@ -383,6 +385,9 @@ export default function LtcRoiCalculator() {
           current.annualMedicarePartARevenue,
       };
     });
+    if (typeof metrics.ccn === 'string') {
+      void trackFacilityActivity({ eventType: 'facility_applied', ccn: metrics.ccn });
+    }
   }, []);
 
   const addOrUpdatePortfolioFacility = () => {
@@ -455,7 +460,7 @@ export default function LtcRoiCalculator() {
           strategicOpportunity,
         }),
       });
-      const data = await response.json();
+      const data = (await response.json()) as { error?: string; advisory?: string };
       if (!response.ok) {
         throw new Error(data.error || 'Unable to generate advisory report.');
       }
@@ -493,15 +498,6 @@ export default function LtcRoiCalculator() {
           strategicUpside: facilityResults.totalStrategicUpside,
         };
 
-  const criticalFields: TrackedInputField[] = [
-    'headcount',
-    'hourlyRate',
-    'overtimeHoursPerYear',
-    'weeklyAgencyHours',
-    'agencyHourlyRate',
-    'pbjHoursPerMonth',
-    'softwareCost',
-  ];
   const sourceRecords = Object.values(facility.inputSources || {});
   const readinessCounts = sourceRecords.reduce<Record<string, number>>((counts, record) => {
     counts[record.source] = (counts[record.source] || 0) + 1;
@@ -511,14 +507,82 @@ export default function LtcRoiCalculator() {
     ? (portfolio.length > 0 ? portfolio : [facility])
     : [facility];
   const blockingInputs = readinessFacilities.flatMap((item) =>
-    criticalFields
-      .filter((field) => {
-        const record = item.inputSources?.[field];
-        return !record || record.source === 'default' || record.reportable === false;
-      })
+    getMissingCriticalFields(item)
       .map((field) => mode === 'portfolio' ? `${item.facilityName}: ${field}` : field),
   );
   const customerReady = blockingInputs.length === 0;
+  const currentMissingFields = getMissingCriticalFields(facility);
+  const calculatorSnapshot = {
+    headcount: facility.headcount,
+    turnoverRate: facility.turnoverRate,
+    overtimeHoursPerYear: facility.overtimeHoursPerYear,
+    weeklyAgencyHours: facility.weeklyAgencyHours,
+    agencyHourlyRate: facility.agencyHourlyRate,
+    pbjHoursPerMonth: facility.pbjHoursPerMonth,
+    softwareCost: facility.softwareCost,
+    totalPaycorInfluencedBenefit: facilityResults.totalPaycorInfluencedBenefit,
+    netAnnualBenefit: facilityResults.netAnnualBenefit,
+    roiPercent: facilityResults.roiPercent,
+    paybackMonths: facilityResults.paybackMonths,
+  };
+  const trackingSignature = JSON.stringify({
+    ccn: facility.ccn,
+    activeStep,
+    missing: currentMissingFields,
+    snapshot: calculatorSnapshot,
+  });
+
+  useEffect(() => {
+    if (!facility.ccn) return;
+    const timer = window.setTimeout(() => {
+      void trackFacilityActivity({
+        eventType: 'progress_updated',
+        ccn: facility.ccn!,
+        currentStep: activeStep,
+        isComplete: currentMissingFields.length === 0,
+        missingFields: currentMissingFields,
+        calculatorSnapshot,
+      });
+    }, 650);
+    return () => window.clearTimeout(timer);
+    // The serialized signature intentionally debounces readiness and approved summary changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackingSignature]);
+
+  const recordReportActivity = (eventType: 'report_opened' | 'report_downloaded') => {
+    const tracked = mode === 'portfolio'
+      ? effectivePortfolioResults.facilities
+      : [{ inputs: facility, results: facilityResults }];
+    tracked.forEach(({ inputs, results }) => {
+      if (!inputs.ccn) return;
+      const missing = getMissingCriticalFields(inputs);
+      void trackFacilityActivity({
+        eventType,
+        ccn: inputs.ccn,
+        currentStep: activeStep,
+        isComplete: missing.length === 0,
+        missingFields: missing,
+        calculatorSnapshot: {
+          headcount: inputs.headcount,
+          turnoverRate: inputs.turnoverRate,
+          overtimeHoursPerYear: inputs.overtimeHoursPerYear,
+          weeklyAgencyHours: inputs.weeklyAgencyHours,
+          agencyHourlyRate: inputs.agencyHourlyRate,
+          pbjHoursPerMonth: inputs.pbjHoursPerMonth,
+          softwareCost: inputs.softwareCost,
+          totalPaycorInfluencedBenefit: results.totalPaycorInfluencedBenefit,
+          netAnnualBenefit: results.netAnnualBenefit,
+          roiPercent: results.roiPercent,
+          paybackMonths: results.paybackMonths,
+        },
+      });
+    });
+  };
+
+  const openCustomerReport = () => {
+    setShowReport(true);
+    recordReportActivity('report_opened');
+  };
   const executiveNarrative = buildExecutiveNarrative({
     mode,
     targetAudience,
@@ -561,7 +625,7 @@ export default function LtcRoiCalculator() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowReport(true)}
+                onClick={openCustomerReport}
                 className="inline-flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-3 rounded-xl text-xs shadow-sm"
               >
                 <FileDown className="w-4 h-4" /> Customer Report
@@ -1091,7 +1155,7 @@ export default function LtcRoiCalculator() {
                 />
               )}
             </div>
-            <button type="button" onClick={() => setShowReport(true)} className="mt-5 inline-flex items-center gap-2 bg-paycor-charcoal text-white font-bold px-4 py-2.5 rounded-xl text-xs">
+            <button type="button" onClick={openCustomerReport} className="mt-5 inline-flex items-center gap-2 bg-paycor-charcoal text-white font-bold px-4 py-2.5 rounded-xl text-xs">
               <FileDown className="w-4 h-4" /> Open Customer Report
             </button>
           </section>
@@ -1159,6 +1223,7 @@ export default function LtcRoiCalculator() {
           proposerTitle={proposerTitle}
           targetAudience={targetAudience}
           strategicOpportunity={strategicOpportunity}
+          onDownloaded={() => recordReportActivity('report_downloaded')}
         />
       )}
     </main>

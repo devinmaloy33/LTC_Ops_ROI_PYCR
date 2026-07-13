@@ -5,6 +5,7 @@ import { Download, Printer, X } from 'lucide-react';
 import { ASSUMPTION_DEFINITIONS } from '@/lib/assumptions';
 import { buildExecutiveNarrative } from '@/lib/executive-narrative';
 import { downloadRoiPdf } from '@/lib/pdf-report';
+import { getMissingCriticalFields, CRITICAL_INPUT_LABELS } from '@/lib/readiness';
 import {
   AnalysisMode,
   FacilityROICalculatorInputs,
@@ -13,7 +14,6 @@ import {
   ScenarioAssumptions,
   ScenarioKey,
   StrategicOpportunitySummary,
-  TrackedInputField,
 } from '@/lib/roi-types';
 
 interface PrintableReportProps {
@@ -28,6 +28,7 @@ interface PrintableReportProps {
   proposerTitle: string;
   targetAudience: string;
   strategicOpportunity: StrategicOpportunitySummary;
+  onDownloaded?: () => void;
 }
 
 const money = (value: number) =>
@@ -46,16 +47,6 @@ const number = (value: number, digits = 0) =>
 const percent = (value: number | null) =>
   value === null ? 'N/A' : `${value.toFixed(0)}%`;
 
-const CRITICAL_FIELDS: TrackedInputField[] = [
-  'headcount',
-  'hourlyRate',
-  'overtimeHoursPerYear',
-  'weeklyAgencyHours',
-  'agencyHourlyRate',
-  'pbjHoursPerMonth',
-  'softwareCost',
-];
-
 export default function PrintableReport({
   onClose,
   mode,
@@ -68,6 +59,7 @@ export default function PrintableReport({
   proposerTitle,
   targetAudience,
   strategicOpportunity,
+  onDownloaded,
 }: PrintableReportProps) {
   const [includeAppendix, setIncludeAppendix] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -102,16 +94,10 @@ export default function PrintableReport({
   const blockingInputs = useMemo(() => {
     if (isPortfolio) {
       return portfolioResults!.facilities.flatMap(({ inputs }) =>
-        CRITICAL_FIELDS.filter((field) => {
-          const record = inputs.inputSources?.[field];
-          return !record || record.source === 'default' || record.reportable === false;
-        }).map((field) => `${inputs.facilityName}: ${formatInputField(field)}`),
+        getMissingCriticalFields(inputs).map((field) => `${inputs.facilityName}: ${formatInputField(field)}`),
       );
     }
-    return CRITICAL_FIELDS.filter((field) => {
-      const record = facilityInputs.inputSources?.[field];
-      return !record || record.source === 'default' || record.reportable === false;
-    }).map(formatInputField);
+    return getMissingCriticalFields(facilityInputs).map(formatInputField);
   }, [facilityInputs, isPortfolio, portfolioResults]);
 
   const customerReady = blockingInputs.length === 0;
@@ -155,6 +141,7 @@ export default function PrintableReport({
         includeAppendix,
         customerReady,
       });
+      onDownloaded?.();
     } catch (error) {
       console.error('PDF download failed', error);
       setDownloadError(
@@ -539,8 +526,8 @@ function ValueDriverCard({
   );
 }
 
-function formatInputField(field: TrackedInputField): string {
-  return field
+function formatInputField(field: string): string {
+  return CRITICAL_INPUT_LABELS[field] || field
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/\bpbj\b/i, 'PBJ')
     .replace(/\bRN\b/i, 'RN')
