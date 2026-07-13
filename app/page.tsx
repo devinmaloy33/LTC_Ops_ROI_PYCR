@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
@@ -23,6 +23,10 @@ import AssumptionsPanel from '@/components/assumptions-panel';
 import PrintableReport from '@/components/printable-report';
 import EstimateAssistant from '@/components/estimate-assistant';
 import StrategicOpportunityCard from '@/components/strategic-opportunity-card';
+import TurnoverInsightsCard from '@/components/turnover-insights-card';
+import OperationalTranslationCard from '@/components/operational-translation-card';
+import FirstUseGuide from '@/components/first-use-guide';
+import StatusQuoCard from '@/components/status-quo-card';
 import { buildExecutiveNarrative } from '@/lib/executive-narrative';
 import {
   calculateFacilityROI,
@@ -45,6 +49,19 @@ import {
   TechnologyInputSources,
 } from '@/lib/roi-types';
 
+const TARGET_AUDIENCE_OPTIONS = [
+  'CEO / Owner',
+  'CFO / Finance',
+  'CHRO / HR',
+  'COO / Administrator',
+  'CIO / IT',
+  'CNO / Clinical Leadership',
+  'Executive Leadership Team',
+  'Other',
+] as const;
+
+type TargetAudienceRole = (typeof TARGET_AUDIENCE_OPTIONS)[number];
+
 const DEFAULT_TECH_COSTS: TechCostMap = {
   recruiting: 0,
   onboarding: 0,
@@ -63,6 +80,7 @@ const TRACKED_INPUT_FIELDS = new Set<TrackedInputField>([
   'reportedNurseAideStaffingHprd', 'reportedTotalNurseStaffingHprd',
   'headcount', 'hourlyRate',
   'adminLoadedHourlyRate', 'turnoverRate', 'rnTurnover', 'adminTurnover',
+  'turnoverCostMethod', 'fixedTurnoverCost', 'turnoverPopulation', 'nursingWorkforceShare',
   'overallRating', 'staffingRating', 'healthInspectionRating',
   'qualityMeasureRating', 'projectedOverallRating', 'healthDeficiencies', 'totalFines',
   'pbjHoursPerMonth', 'overtimeHoursPerYear', 'weeklyAgencyHours',
@@ -85,6 +103,10 @@ const DEFAULT_FACILITY: FacilityROICalculatorInputs = {
   turnoverRate: 55,
   rnTurnover: 45,
   adminTurnover: 'No',
+  turnoverCostMethod: 'compensation-percentage',
+  fixedTurnoverCost: 0,
+  turnoverPopulation: 'nursing',
+  nursingWorkforceShare: 0.65,
   overallRating: 3,
   staffingRating: 3,
   healthInspectionRating: 3,
@@ -150,12 +172,38 @@ export default function LtcRoiCalculator() {
   const [showReport, setShowReport] = useState(false);
   const [showEstimateAssistant, setShowEstimateAssistant] = useState(false);
   const [showTechBreakdown, setShowTechBreakdown] = useState(false);
+  const [showFirstUseGuide, setShowFirstUseGuide] = useState(false);
   const [proposerName, setProposerName] = useState('Paycor Consultant');
   const [proposerTitle, setProposerTitle] = useState('Long-Term Care Advisor');
-  const [targetAudience, setTargetAudience] = useState('Executive Leadership Team');
+  const [targetAudienceRole, setTargetAudienceRole] =
+    useState<TargetAudienceRole>('Executive Leadership Team');
+  const [customTargetAudience, setCustomTargetAudience] = useState('');
+  const targetAudience =
+    targetAudienceRole === 'Other'
+      ? customTargetAudience.trim() || 'Other'
+      : targetAudienceRole;
   const [aiStrategy, setAiStrategy] = useState('');
   const [aiStrategyLoading, setAiStrategyLoading] = useState(false);
   const [aiStrategyError, setAiStrategyError] = useState('');
+
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem('ltc-roi-walkthrough-seen')) {
+        setShowFirstUseGuide(true);
+      }
+    } catch {
+      // Local storage may be unavailable in restricted previews.
+    }
+  }, []);
+
+  const closeFirstUseGuide = () => {
+    setShowFirstUseGuide(false);
+    try {
+      window.localStorage.setItem('ltc-roi-walkthrough-seen', 'true');
+    } catch {
+      // The walkthrough remains dismissible even without storage access.
+    }
+  };
 
   const facilityResults = useMemo(
     () => calculateFacilityROI(facility, assumptions),
@@ -307,6 +355,9 @@ export default function LtcRoiCalculator() {
         headcount: metrics.headcount ?? current.headcount,
         hourlyRate: metrics.hourlyRate ?? current.hourlyRate,
         turnoverRate: metrics.turnoverRate ?? current.turnoverRate,
+        turnoverPopulation: metrics.turnoverRate !== undefined && metrics.turnoverRate !== null
+          ? 'nursing'
+          : current.turnoverPopulation,
         rnTurnover: metrics.rnTurnover ?? current.rnTurnover,
         adminTurnover: metrics.adminTurnover ?? current.adminTurnover,
         totalFines: metrics.totalFines ?? current.totalFines,
@@ -493,13 +544,20 @@ export default function LtcRoiCalculator() {
               Quantify current workforce leakage, isolate Paycor-influenced financial value, and disclose correlated CMS, census and SNF VBP upside separately.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowReport(true)}
-            className="inline-flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-3 rounded-xl text-xs shadow-sm"
-          >
-            <FileDown className="w-4 h-4" /> Customer Report
-          </button>
+          <div className="flex flex-col items-start lg:items-end gap-3">
+            <img
+              src="/paycor-logo.png"
+              alt="Paycor — Empowering Leaders"
+              className="h-16 md:h-[72px] w-auto object-contain"
+            />
+            <button
+              type="button"
+              onClick={() => setShowReport(true)}
+              className="inline-flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-3 rounded-xl text-xs shadow-sm"
+            >
+              <FileDown className="w-4 h-4" /> Customer Report
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-t border-slate-100 pt-5">
@@ -606,11 +664,20 @@ export default function LtcRoiCalculator() {
                 {readinessCounts.cms || 0} CMS fields · {readinessCounts.prospect || 0} prospect-confirmed · {readinessCounts.estimate || 0} estimates · {readinessCounts.default || 0} defaults
               </p>
             </div>
-            {!customerReady && (
-              <button type="button" onClick={() => setShowEstimateAssistant(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey">
-                Review unconfirmed values
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFirstUseGuide(true)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey"
+              >
+                How to use this tool
               </button>
-            )}
+              {!customerReady && (
+                <button type="button" onClick={() => setShowEstimateAssistant(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey">
+                  Review unconfirmed values
+                </button>
+              )}
+            </div>
           </section>
 
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
@@ -690,13 +757,21 @@ export default function LtcRoiCalculator() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <NumberInput label="Total Headcount" value={facility.headcount} source={facility.inputSources?.headcount} onChange={(value) => updateFacility('headcount', value)} />
               <NumberInput label="Average Hourly Rate" value={facility.hourlyRate} source={facility.inputSources?.hourlyRate} prefix="$" decimals={2} onChange={(value) => updateFacility('hourlyRate', value)} />
-              <NumberInput label="General Turnover" value={facility.turnoverRate} source={facility.inputSources?.turnoverRate} suffix="%" decimals={1} onChange={(value) => updateFacility('turnoverRate', value)} />
-              <NumberInput label="RN Turnover" value={facility.rnTurnover} source={facility.inputSources?.rnTurnover} suffix="%" decimals={1} onChange={(value) => updateFacility('rnTurnover', value)} />
+              <NumberInput label="Turnover Rate Used in Model" value={facility.turnoverRate} source={facility.inputSources?.turnoverRate} suffix="%" decimals={1} onChange={(value) => updateFacility('turnoverRate', value)} />
+              <NumberInput label="CMS RN Turnover (Context)" value={facility.rnTurnover} source={facility.inputSources?.rnTurnover} suffix="%" decimals={1} onChange={(value) => updateFacility('rnTurnover', value)} />
               <NumberInput label="PBJ Prep Hours / Month" value={facility.pbjHoursPerMonth} source={facility.inputSources?.pbjHoursPerMonth} onChange={(value) => updateFacility('pbjHoursPerMonth', value)} />
               <NumberInput label="Annual Overtime Hours" value={facility.overtimeHoursPerYear} source={facility.inputSources?.overtimeHoursPerYear} onChange={(value) => updateFacility('overtimeHoursPerYear', value)} />
               <NumberInput label="Weekly Agency Hours" value={facility.weeklyAgencyHours} source={facility.inputSources?.weeklyAgencyHours} onChange={(value) => updateFacility('weeklyAgencyHours', value)} />
               <NumberInput label="Agency Hourly Rate" value={facility.agencyHourlyRate} source={facility.inputSources?.agencyHourlyRate} prefix="$" decimals={2} onChange={(value) => updateFacility('agencyHourlyRate', value)} />
             </div>
+            <TurnoverInsightsCard
+              inputs={facility}
+              results={facilityResults}
+              assumptions={assumptions}
+              onInputChange={updateFacility}
+              onAssumptionsChange={setAssumptions}
+            />
+            <OperationalTranslationCard inputs={facility} results={facilityResults} />
             <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <summary className="cursor-pointer text-[10px] font-extrabold text-paycor-medium-grey">Advanced PBJ costing input</summary>
               <div className="mt-3 max-w-sm">
@@ -847,7 +922,7 @@ export default function LtcRoiCalculator() {
               description="The base business case uses direct and Paycor-influenced outcomes. Strategic correlated value remains outside base ROI."
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <SummaryCard label="Current Direct Opportunity" value={money(summary.directOpportunity)} />
+              <SummaryCard label="Current Modeled Operating Burden" value={money(summary.directOpportunity)} />
               <SummaryCard label="Paycor-Influenced Benefit" value={money(summary.baseBenefit)} emphasis />
               <SummaryCard label="Annual Investment" value={money(summary.investment)} />
               <SummaryCard label="Net Annual Benefit" value={money(summary.netBenefit)} positive={summary.netBenefit >= 0} />
@@ -953,7 +1028,7 @@ export default function LtcRoiCalculator() {
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
             <SectionHeader
               icon={<CheckCircle2 className="w-4 h-4" />}
-              title="Board-Ready Financial Case"
+              title="Executive Business Case Preview"
               description="Net ROI is calculated as (Paycor-influenced annual benefit − annual investment) ÷ annual investment."
             />
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 mb-5">
@@ -976,6 +1051,11 @@ export default function LtcRoiCalculator() {
             </div>
           </section>
 
+          <StatusQuoCard
+            currentBurden={summary.directOpportunity}
+            paycorInfluencedBenefit={summary.baseBenefit}
+          />
+
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
             <SectionHeader
               icon={<FileDown className="w-4 h-4" />}
@@ -985,7 +1065,30 @@ export default function LtcRoiCalculator() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <TextInput label="Prepared By" value={proposerName} onChange={setProposerName} />
               <TextInput label="Title" value={proposerTitle} onChange={setProposerTitle} />
-              <TextInput label="Target Audience" value={targetAudience} onChange={setTargetAudience} />
+              <label>
+                <span className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-[11px] font-bold text-paycor-medium-grey">Target Audience Role</span>
+                </span>
+                <select
+                  value={targetAudienceRole}
+                  onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
+                    setTargetAudienceRole(event.target.value as TargetAudienceRole)
+                  }
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-paycor-orange"
+                >
+                  {TARGET_AUDIENCE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+              {targetAudienceRole === 'Other' && (
+                <TextInput
+                  label="Other Target Audience"
+                  value={customTargetAudience}
+                  onChange={setCustomTargetAudience}
+                  className="md:col-span-3"
+                />
+              )}
             </div>
             <button type="button" onClick={() => setShowReport(true)} className="mt-5 inline-flex items-center gap-2 bg-paycor-charcoal text-white font-bold px-4 py-2.5 rounded-xl text-xs">
               <FileDown className="w-4 h-4" /> Open Customer Report
@@ -1032,6 +1135,8 @@ export default function LtcRoiCalculator() {
           </div>
         </div>
       )}
+
+      <FirstUseGuide open={showFirstUseGuide} onClose={closeFirstUseGuide} />
 
       <EstimateAssistant
         open={showEstimateAssistant}

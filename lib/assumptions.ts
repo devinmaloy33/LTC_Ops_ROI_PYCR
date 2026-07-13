@@ -67,9 +67,9 @@ const CMS_PBJ_URL =
 export const ASSUMPTION_DEFINITIONS: AssumptionDefinition[] = [
   {
     key: 'turnoverCostMultiple',
-    label: 'Turnover cost as annual compensation multiple',
+    label: 'Replacement cost as percentage of annual compensation',
     description:
-      'Estimates recruiting, onboarding, vacancy, training and early-productivity burden per replacement. Validate against the prospect’s finance or HR data whenever available.',
+      'Estimates the replacement cost per turnover event when the percentage-of-compensation method is selected. The calculator also supports a fixed prospect-confirmed cost per turnover.',
     evidenceClass: 'influenced',
     sourceKind: 'consultant',
     sourceLabel: 'Scenario-planning input; customer validation preferred',
