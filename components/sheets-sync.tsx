@@ -15,6 +15,7 @@ import {
 import { FacilityInputSources, InputSourceRecord } from '@/lib/roi-types';
 
 type NullableNumber = number | null;
+type RatingType = 'overall' | 'staffing' | 'healthInspection' | 'qualityMeasure';
 
 interface Provider {
   ccn: string;
@@ -110,6 +111,15 @@ interface SheetsSyncProps {
 const PAGE_SIZE = 50;
 const DATASET_ID = '4pq5-n9py';
 
+const RATING_TYPES: Array<{ value: RatingType; label: string }> = [
+  { value: 'overall', label: 'Overall Rating' },
+  { value: 'staffing', label: 'Staffing Rating' },
+  { value: 'healthInspection', label: 'Health Inspection Rating' },
+  { value: 'qualityMeasure', label: 'Quality Measure Rating' },
+];
+
+const STAR_RATINGS = [1, 2, 3, 4, 5];
+
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI',
   'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN',
@@ -141,6 +151,8 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
   const [chainSearch, setChainSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [debouncedChainSearch, setDebouncedChainSearch] = useState('');
+  const [ratingType, setRatingType] = useState<RatingType>('overall');
+  const [rating, setRating] = useState('');
   const [page, setPage] = useState(1);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedCcn, setSelectedCcn] = useState('');
@@ -186,6 +198,10 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
         if (state !== 'All') params.set('state', state);
         if (debouncedSearch) params.set('search', debouncedSearch);
         if (debouncedChainSearch) params.set('chain', debouncedChainSearch);
+        if (rating) {
+          params.set('ratingType', ratingType);
+          params.set('rating', rating);
+        }
 
         const response = await fetch(`/api/providers?${params.toString()}`, {
           signal: controller.signal,
@@ -222,7 +238,7 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
       active = false;
       controller.abort();
     };
-  }, [state, debouncedSearch, debouncedChainSearch, page]);
+  }, [state, debouncedSearch, debouncedChainSearch, ratingType, rating, page]);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.ccn === selectedCcn),
@@ -433,6 +449,49 @@ export default function SheetsSync({ onApplyMetrics }: SheetsSyncProps) {
               className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 py-2.5 text-sm outline-none focus:border-paycor-orange"
             />
           </div>
+        </label>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label>
+          <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">
+            Rating category
+          </span>
+          <select
+            value={ratingType}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
+              setRatingType(event.target.value as RatingType);
+              setPage(1);
+              setSelectedCcn('');
+            }}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-paycor-orange"
+          >
+            {RATING_TYPES.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span className="block text-[10px] uppercase tracking-wider font-bold text-paycor-grey mb-1.5">
+            Star rating
+          </span>
+          <select
+            value={rating}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
+              setRating(event.target.value);
+              setPage(1);
+              setSelectedCcn('');
+            }}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-paycor-orange"
+          >
+            <option value="">All Ratings</option>
+            {STAR_RATINGS.map((stars) => (
+              <option key={stars} value={stars}>
+                {stars} {stars === 1 ? 'Star' : 'Stars'}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 

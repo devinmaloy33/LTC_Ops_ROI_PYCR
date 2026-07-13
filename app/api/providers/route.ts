@@ -11,6 +11,15 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const CMS_REQUEST_TIMEOUT_MS = 15_000;
 
+const RATING_FIELDS = {
+  overall: 'overall_rating',
+  staffing: 'staffing_rating',
+  healthInspection: 'health_inspection_rating',
+  qualityMeasure: 'qm_rating',
+} as const;
+
+type RatingType = keyof typeof RATING_FIELDS;
+
 type RawCmsRecord = Record<string, unknown>;
 
 type CmsProvider = {
@@ -235,6 +244,8 @@ export async function GET(request: NextRequest) {
   const stateParam = (searchParams.get('state') || '').trim().toUpperCase();
   const searchParam = (searchParams.get('search') || '').trim().slice(0, 100);
   const chainParam = (searchParams.get('chain') || '').trim().slice(0, 100);
+  const ratingTypeParam = (searchParams.get('ratingType') || '').trim();
+  const ratingParam = (searchParams.get('rating') || '').trim();
   const page = parsePositiveInteger(searchParams.get('page'), 1, 1, 10_000);
   const pageSize = parsePositiveInteger(
     searchParams.get('pageSize'),
@@ -246,6 +257,20 @@ export async function GET(request: NextRequest) {
 
   if (stateParam && stateParam !== 'ALL' && !/^[A-Z]{2}$/.test(stateParam)) {
     return NextResponse.json({ error: 'State must be a two-letter abbreviation.' }, { status: 400 });
+  }
+
+  if (ratingTypeParam && !(ratingTypeParam in RATING_FIELDS)) {
+    return NextResponse.json(
+      { error: 'Rating type must be overall, staffing, healthInspection or qualityMeasure.' },
+      { status: 400 },
+    );
+  }
+
+  if (ratingParam && !/^[1-5]$/.test(ratingParam)) {
+    return NextResponse.json(
+      { error: 'Rating must be a whole number from 1 through 5.' },
+      { status: 400 },
+    );
   }
 
   const conditions: Array<{
@@ -279,6 +304,15 @@ export async function GET(request: NextRequest) {
       property: 'chain_name',
       value: `%${chainParam}%`,
       operator: 'LIKE',
+    });
+  }
+
+  if (ratingParam) {
+    const ratingType = (ratingTypeParam || 'overall') as RatingType;
+    conditions.push({
+      property: RATING_FIELDS[ratingType],
+      value: ratingParam,
+      operator: '=',
     });
   }
 
