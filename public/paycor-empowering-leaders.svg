@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 770 390" width="770" height="390" style="background-color: #ffffff;">
+  <!-- White Background -->
+  <rect width="770" height="390" fill="#ffffff" />
+
+  <!-- Emblem on the left -->
+  <g transform="translate(60, 85) scale(1.65)">
+    <!-- Main outer crescent / leaf (Paycor Orange) -->
+    <path d="M 85,25 C 45,25 20,55 20,90 C 20,125 50,130 75,130 C 50,115 45,95 45,85 C 45,60 65,45 85,45 C 95,45 105,50 110,55 C 100,40 95,25 85,25 Z" fill="#F58220" />
+    <!-- Secondary inner crescent / leaf (Paycor Amber) -->
+    <path d="M 105,45 C 75,45 55,65 55,95 C 55,120 75,125 90,125 C 75,115 70,100 70,90 C 70,70 85,60 100,60 C 108,60 115,63 118,67 C 112,55 110,45 105,45 Z" fill="#F1B326" />
+    <!-- Accents / small dynamic spark (Paycor Red-Orange) -->
+    <circle cx="120" cy="85" r="8" fill="#E03C11" />
+  </g>
+
+  <!-- Wordmark "Paycor" -->
+  <text x="275" y="215" font-family="'Liberation Sans', 'Myriad Pro', Arial, Helvetica, sans-serif" font-size="112" font-weight="bold" fill="#3B4446" letter-spacing="-3">Paycor</text>
+
+  <!-- Tagline "Empowering leaders™" -->
+  <text x="280" y="285" font-family="'Purisa', 'Z003', 'Caveat', cursive" font-size="44" font-weight="normal" fill="#F58220" letter-spacing="1">Empowering leaders<tspan font-family="Arial, sans-serif" font-size="24" dy="-14">®</tspan></text>
+</svg>

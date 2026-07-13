@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileDown,
+  HelpCircle,
   Layers3,
   Plus,
   RefreshCw,
@@ -546,17 +547,26 @@ export default function LtcRoiCalculator() {
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <img
-              src="/paycor-logo.png"
+              src="/paycor-empowering-leaders.jpg"
               alt="Paycor — Empowering Leaders"
-              className="h-16 md:h-[72px] w-auto object-contain"
+              className="w-[165px] h-auto object-contain"
             />
-            <button
-              type="button"
-              onClick={() => setShowReport(true)}
-              className="inline-flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-3 rounded-xl text-xs shadow-sm"
-            >
-              <FileDown className="w-4 h-4" /> Customer Report
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFirstUseGuide(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold text-paycor-medium-grey hover:bg-slate-50"
+              >
+                <HelpCircle className="h-4 w-4" /> How it works
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowReport(true)}
+                className="inline-flex items-center justify-center gap-2 bg-paycor-orange hover:bg-paycor-red-orange text-white font-extrabold px-4 py-3 rounded-xl text-xs shadow-sm"
+              >
+                <FileDown className="w-4 h-4" /> Customer Report
+              </button>
+            </div>
           </div>
         </div>
 
@@ -664,20 +674,11 @@ export default function LtcRoiCalculator() {
                 {readinessCounts.cms || 0} CMS fields · {readinessCounts.prospect || 0} prospect-confirmed · {readinessCounts.estimate || 0} estimates · {readinessCounts.default || 0} defaults
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowFirstUseGuide(true)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey"
-              >
-                How to use this tool
+            {!customerReady && (
+              <button type="button" onClick={() => setShowEstimateAssistant(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey">
+                Review unconfirmed values
               </button>
-              {!customerReady && (
-                <button type="button" onClick={() => setShowEstimateAssistant(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey">
-                  Review unconfirmed values
-                </button>
-              )}
-            </div>
+            )}
           </section>
 
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">

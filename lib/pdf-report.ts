@@ -86,7 +86,7 @@ export async function downloadRoiPdf(payload: PdfPayload): Promise<void> {
 
   const isPortfolio = mode === 'portfolio' && Boolean(portfolioResults);
   const doc = new jsPDF('p', 'pt', 'a4');
-  const logo = await loadPublicImageAsDataUrl('/paycor-logo.png');
+  const logo = await loadPublicImageAsDataUrl('/paycor-empowering-leaders.jpg');
 
   const pageWidth = 595.28;
   const pageHeight = 841.89;
@@ -122,7 +122,7 @@ export async function downloadRoiPdf(payload: PdfPayload): Promise<void> {
   }
 
   function drawContinuationHeader() {
-    if (logo) doc.addImage(logo, 'PNG', margin, 14, 62, 30);
+    if (logo) doc.addImage(logo, 'JPEG', margin, 14, 62, 30);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(7.5);
     setTextColor(colors.grey);
@@ -339,7 +339,7 @@ export async function downloadRoiPdf(payload: PdfPayload): Promise<void> {
   });
 
   // Page 1: executive case
-  if (logo) doc.addImage(logo, 'PNG', margin, 18, 116, 56);
+  if (logo) doc.addImage(logo, 'JPEG', margin, 18, 116, 56);
   drawDraftBanner();
   currentY = logo ? 91 : 46;
   doc.setFillColor(...colors.orange);

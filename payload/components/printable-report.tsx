@@ -221,9 +221,9 @@ export default function PrintableReport({
           <header className="mb-8 break-inside-avoid border-b-4 border-paycor-orange pb-6">
             <div className="flex items-start justify-between gap-5">
               <img
-                src="/paycor-logo.png"
+                src="/paycor-empowering-leaders.jpg"
                 alt="Paycor — Empowering Leaders"
-                className="h-14 w-auto object-contain"
+                className="w-[140px] h-auto object-contain"
               />
               {!customerReady && (
                 <span className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-[9px] font-extrabold uppercase tracking-wider text-amber-800">
