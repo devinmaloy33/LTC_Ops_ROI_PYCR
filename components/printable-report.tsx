@@ -325,8 +325,8 @@ export default function PrintableReport({
             <ol className="list-decimal pl-5 text-xs text-paycor-medium-grey space-y-2 leading-relaxed">
               <li>{narrative.nextStep}</li>
               <li>Validate headcount, wage, overtime, agency, PBJ labor, Medicare Part A revenue, and technology contracts with the appropriate data owners.</li>
-              <li>Confirm which systems can be consolidated or retired and the effective contract dates.</li>
-              <li>Establish baseline measures and named owners for 90-day and 180-day value reviews.</li>
+              <li>Confirm which technology contracts can actually be retired and the effective renewal dates.</li>
+              <li>Establish baseline measures and named owners for 90-day and 180-day post-implementation value reviews.</li>
             </ol>
           </section>
 

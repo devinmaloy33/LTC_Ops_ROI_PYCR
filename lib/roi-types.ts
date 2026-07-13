@@ -1,24 +1,8 @@
 export type AnalysisMode = 'facility' | 'portfolio';
 export type ScenarioKey = 'conservative' | 'expected' | 'opportunity';
+export type EstimateConfidence = 'high' | 'medium' | 'low';
 export type EvidenceClass = 'direct' | 'influenced' | 'correlated';
-export type EstimateConfidence = 'low' | 'medium' | 'high';
-export type SourceKind =
-  | 'prospect'
-  | 'cms'
-  | 'research'
-  | 'consultant'
-  | 'calculated'
-  | 'estimate'
-  | 'default';
-
-export type StrategicYesNoUnknown = 'yes' | 'no' | 'unknown';
-export type CmsStrategicObjective = 'protect' | 'improve' | 'unknown';
-
-export interface StrategicRefinements {
-  staffingConstrainedAdmissions?: StrategicYesNoUnknown;
-  cmsObjective?: CmsStrategicObjective;
-  activeComplianceRemediation?: StrategicYesNoUnknown;
-}
+export type SourceKind = 'cms' | 'prospect' | 'consultant';
 
 export type TrackedInputField =
   | 'facilityName'
@@ -29,53 +13,53 @@ export type TrackedInputField =
   | 'ccn'
   | 'chainName'
   | 'chainFacilities'
-  | 'certifiedBeds'
-  | 'averageResidentsPerDay'
-  | 'reportedRnStaffingHprd'
-  | 'reportedNurseAideStaffingHprd'
-  | 'reportedTotalNurseStaffingHprd'
   | 'headcount'
   | 'hourlyRate'
   | 'adminLoadedHourlyRate'
   | 'turnoverRate'
   | 'rnTurnover'
   | 'adminTurnover'
+  | 'certifiedBeds'
+  | 'averageResidentsPerDay'
+  | 'reportedRnStaffingHprd'
+  | 'reportedNurseAideStaffingHprd'
+  | 'reportedTotalNurseStaffingHprd'
+  | 'overtimeHoursPerYear'
+  | 'weeklyAgencyHours'
+  | 'agencyHourlyRate'
+  | 'pbjHoursPerMonth'
   | 'overallRating'
   | 'staffingRating'
   | 'healthInspectionRating'
   | 'qualityMeasureRating'
   | 'projectedOverallRating'
-  | 'healthDeficiencies'
-  | 'totalFines'
-  | 'pbjHoursPerMonth'
-  | 'overtimeHoursPerYear'
-  | 'weeklyAgencyHours'
-  | 'agencyHourlyRate'
-  | 'annualMedicarePartARevenue'
-  | 'avgMonthlyResidentValue'
   | 'referralsPerStarLevel'
+  | 'avgMonthlyResidentValue'
+  | 'annualMedicarePartARevenue'
   | 'complianceRiskExposure'
+  | 'totalFines'
+  | 'healthDeficiencies'
   | 'softwareCost';
 
 export interface InputSourceRecord {
-  source: SourceKind;
+  source: 'cms' | 'prospect' | 'consultant' | 'calculated' | 'research' | 'estimate' | 'default';
   label: string;
   datasetId?: string;
   sourceField?: string;
   retrievedAt?: string;
-  note?: string;
   confidence?: EstimateConfidence;
   method?: string;
+  note?: string;
   drivers?: Record<string, string | number | boolean>;
   reportable?: boolean;
   requiresConfirmation?: boolean;
 }
 
-export type FacilityInputSources = Partial<
-  Record<TrackedInputField, InputSourceRecord>
->;
+export type FacilityInputSources = Partial<Record<TrackedInputField, InputSourceRecord>>;
 
-export type TechCostMap = {
+export type TechnologyInputSources = Partial<Record<keyof TechCostMap, InputSourceRecord>>;
+
+export interface TechCostMap {
   recruiting: number;
   onboarding: number;
   payroll: number;
@@ -85,11 +69,55 @@ export type TechCostMap = {
   lms: number;
   performance: number;
   other: number;
-};
+}
 
-export type TechnologyInputSources = Partial<
-  Record<keyof TechCostMap, InputSourceRecord>
->;
+export interface FacilityROICalculatorInputs {
+  id?: string;
+  facilityName: string;
+  facilityAddress?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  ccn?: string;
+  chainName?: string;
+  chainFacilities?: number;
+
+  headcount: number;
+  hourlyRate: number;
+  adminLoadedHourlyRate: number;
+  turnoverRate: number;
+  rnTurnover: number;
+  adminTurnover: string;
+
+  certifiedBeds?: number;
+  averageResidentsPerDay?: number;
+  reportedRnStaffingHprd?: number;
+  reportedNurseAideStaffingHprd?: number;
+  reportedTotalNurseStaffingHprd?: number;
+
+  overtimeHoursPerYear: number;
+  weeklyAgencyHours: number;
+  agencyHourlyRate: number;
+  pbjHoursPerMonth: number;
+
+  overallRating: number;
+  staffingRating: number;
+  healthInspectionRating: number;
+  qualityMeasureRating: number;
+  projectedOverallRating: number;
+  referralsPerStarLevel: number;
+  avgMonthlyResidentValue: number;
+  annualMedicarePartARevenue: number;
+  complianceRiskExposure: number;
+  totalFines: number;
+  healthDeficiencies: number;
+
+  softwareCost: number;
+  currentTechCosts: TechCostMap;
+  inputSources?: FacilityInputSources;
+  strategicRefinements?: StrategicRefinements;
+  technologySources?: TechnologyInputSources;
+}
 
 export interface ScenarioAssumptions {
   turnoverCostMultiple: number;
@@ -119,58 +147,6 @@ export interface AssumptionDefinition {
   min: number;
   max: number;
   step: number;
-  section?: 'base' | 'advanced' | 'strategic';
-}
-
-export interface FacilityROICalculatorInputs {
-  id?: string;
-  ccn?: string;
-  facilityName: string;
-  facilityAddress?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  chainName?: string;
-  chainFacilities?: number;
-
-  // CMS facility context. These fields improve guided estimates and the strategic
-  // narrative but are never treated as employee or financial actuals.
-  certifiedBeds?: number;
-  averageResidentsPerDay?: number;
-  reportedRnStaffingHprd?: number;
-  reportedNurseAideStaffingHprd?: number;
-  reportedTotalNurseStaffingHprd?: number;
-
-  headcount: number;
-  hourlyRate: number;
-  adminLoadedHourlyRate: number;
-  turnoverRate: number;
-  rnTurnover: number;
-  adminTurnover: string;
-
-  overallRating: number;
-  staffingRating: number;
-  healthInspectionRating?: number;
-  qualityMeasureRating?: number;
-  projectedOverallRating: number;
-  healthDeficiencies: number;
-  totalFines: number;
-
-  pbjHoursPerMonth: number;
-  overtimeHoursPerYear: number;
-  weeklyAgencyHours: number;
-  agencyHourlyRate: number;
-
-  annualMedicarePartARevenue: number;
-  avgMonthlyResidentValue: number;
-  referralsPerStarLevel: number;
-  complianceRiskExposure: number;
-
-  softwareCost: number;
-  currentTechCosts: TechCostMap;
-  inputSources?: FacilityInputSources;
-  technologySources?: TechnologyInputSources;
-  strategicRefinements?: StrategicRefinements;
 }
 
 export interface ValueLineItem {
@@ -189,7 +165,6 @@ export interface FacilityROIResults {
   annualCompensationPerEmployee: number;
   estimatedCostPerTurnover: number;
   estimatedTurnoverEvents: number;
-
   baselineTurnoverBurden: number;
   baselineOvertimePremium: number;
   baselineAgencyPremium: number;
@@ -245,18 +220,15 @@ export interface PortfolioROIResults {
   }>;
 }
 
-export type StrategicModuleKey = 'census' | 'cms' | 'vbp' | 'compliance';
-export type StrategicPriority = 'lower' | 'moderate' | 'high';
-
 export interface StrategicOpportunityModule {
-  key: StrategicModuleKey;
+  key: 'census' | 'cms' | 'vbp' | 'compliance';
   title: string;
   subtitle: string;
-  priority: StrategicPriority;
-  statusLabel: string;
+  priority: 'lower' | 'moderate' | 'high';
+  valueIncludedInRange: boolean;
   valueLow: number;
   valueHigh: number;
-  valueIncludedInRange: boolean;
+  statusLabel: string;
   currentCondition: string;
   narrative: string;
   methodology: string;
@@ -268,9 +240,13 @@ export interface StrategicOpportunityModule {
 export interface StrategicOpportunitySummary {
   valueLow: number;
   valueHigh: number;
-  availableBeds: number | null;
-  annualValuePerResident: number;
   highPriorityFacilityCount: number;
   modules: StrategicOpportunityModule[];
   disclosure: string;
+}
+
+export interface StrategicRefinements {
+  staffingConstrainedAdmissions?: 'unknown' | 'yes' | 'no';
+  cmsObjective?: 'unknown' | 'protect' | 'improve';
+  activeComplianceRemediation?: 'unknown' | 'yes' | 'no';
 }

@@ -216,7 +216,7 @@ export default function StrategicOpportunityCard({
               {mode === 'facility' && module.key === 'cms' && inputs && onStrategicInputChange && (
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <RefinementStar label="Modeled overall rating" value={inputs.projectedOverallRating} onChange={(value) => onStrategicInputChange('projectedOverallRating', value)} />
-                  <p className="text-[8px] text-paycor-grey mt-2">This is a consultant scenario—not a CMS forecast or guarantee.</p>
+                  <p className="text-[8px] text-paycor-grey mt-2">This is a consultant scenario—not a CMS rating forecast or guarantee.</p>
                 </div>
               )}
 

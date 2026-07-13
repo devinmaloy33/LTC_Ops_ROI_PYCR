@@ -4,7 +4,7 @@ import {
   InputSourceRecord,
   TechCostMap,
   TrackedInputField,
-} from './roi-types';
+} from '@/lib/roi-types';
 
 export type GuidedEstimateField =
   | 'headcount'
@@ -81,7 +81,7 @@ export interface GuidedEstimateResult {
 export const DEFAULT_GUIDED_ESTIMATE_DRIVERS: GuidedEstimateDrivers = {
   occupancyRate: 0.82,
   employeesPerResident: 1.15,
-  headcountPlanningMultiplier: 2.0,
+  headcountPlanningMultiplier: 2,
   nursingWorkforceShare: 0.65,
   annualProductiveHoursPerFte: 1_768,
 
@@ -438,7 +438,7 @@ export function calculateGuidedEstimates(
     annualMedicarePartARevenue: {
       field: 'annualMedicarePartARevenue',
       value: rounded(annualMedicarePartARevenue),
-      confidence: 'low',
+      confidence: residentCensus > 0 ? 'low' : 'low',
       label: 'Guided Medicare Part A revenue estimate',
       method: 'Average residents/day × Medicare Part A census share × daily Part A revenue × 365.',
       note: 'Use finance or Medicare remittance actuals before relying on SNF VBP exposure.',

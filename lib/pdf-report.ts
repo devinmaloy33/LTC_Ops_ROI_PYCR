@@ -1,3 +1,8 @@
+'use client';
+
+import { jsPDF } from 'jspdf';
+import { ASSUMPTION_DEFINITIONS } from './assumptions';
+import { buildExecutiveNarrative } from './executive-narrative';
 import {
   AnalysisMode,
   FacilityROICalculatorInputs,
@@ -7,10 +12,8 @@ import {
   ScenarioKey,
   StrategicOpportunitySummary,
 } from './roi-types';
-import { buildExecutiveNarrative } from './executive-narrative';
-import { ASSUMPTION_DEFINITIONS } from './assumptions';
 
-export interface DownloadRoiPdfOptions {
+interface PdfPayload {
   mode: AnalysisMode;
   facilityInputs: FacilityROICalculatorInputs;
   facilityResults: FacilityROIResults;
@@ -30,309 +33,517 @@ const money = (value: number) =>
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
-  }).format(Math.max(0, value || 0));
+  }).format(value || 0);
 
-const safeFileName = (value: string) =>
-  value
-    .replace(/[^a-z0-9]+/gi, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 80) || 'LTC_ROI_Assessment';
+const percent = (value: number | null) =>
+  value === null ? 'N/A' : `${value.toFixed(0)}%`;
 
-export async function downloadRoiPdf(options: DownloadRoiPdfOptions): Promise<string> {
-  const { jsPDF } = await import('jspdf');
-  const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 46;
+export async function downloadRoiPdf(payload: PdfPayload): Promise<void> {
+  const {
+    mode,
+    facilityInputs,
+    facilityResults,
+    portfolioResults,
+    scenario,
+    assumptions,
+    proposerName,
+    proposerTitle,
+    targetAudience,
+    strategicOpportunity,
+    includeAppendix,
+    customerReady,
+  } = payload;
+
+  const isPortfolio = mode === 'portfolio' && Boolean(portfolioResults);
+  const doc = new jsPDF('p', 'pt', 'a4');
+
+  // Page dimensions in points: A4 is 595.28 x 841.89
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 54;
   const contentWidth = pageWidth - margin * 2;
-  const orange: [number, number, number] = [245, 130, 32];
-  const charcoal: [number, number, number] = [59, 68, 70];
-  const grey: [number, number, number] = [90, 96, 99];
-  const light: [number, number, number] = [245, 247, 249];
-  let y = margin;
+  let currentY = 60;
 
-  const isPortfolio = options.mode === 'portfolio' && options.portfolioResults;
-  const baseBenefit = isPortfolio
-    ? options.portfolioResults!.totalPaycorInfluencedBenefit
-    : options.facilityResults.totalPaycorInfluencedBenefit;
-  const investment = isPortfolio
-    ? options.portfolioResults!.totalSoftwareCost
-    : options.facilityResults.softwareCost;
-  const netBenefit = isPortfolio
-    ? options.portfolioResults!.netAnnualBenefit
-    : options.facilityResults.netAnnualBenefit;
-  const roi = isPortfolio ? options.portfolioResults!.roiPercent : options.facilityResults.roiPercent;
-  const ratio = isPortfolio
-    ? options.portfolioResults!.benefitCostRatio
-    : options.facilityResults.benefitCostRatio;
-  const payback = isPortfolio
-    ? options.portfolioResults!.paybackMonths
-    : options.facilityResults.paybackMonths;
-  const breakEven = isPortfolio
-    ? options.portfolioResults!.breakEvenRealizationRate
-    : options.facilityResults.breakEvenRealizationRate;
-  const headcount = isPortfolio
-    ? options.portfolioResults!.totalHeadcount
-    : options.facilityInputs.headcount;
-  const pepm = headcount > 0 ? investment / headcount / 12 : 0;
+  function addHeader(isFirstPage = false) {
+    if (isFirstPage) return;
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(136, 139, 141); // Paycor grey
+    doc.text('LTC & Skilled Nursing Operational ROI', margin, 40);
+    doc.text(
+      isPortfolio ? 'Portfolio Assessment' : `Facility Assessment · ${facilityInputs.facilityName}`,
+      pageWidth - margin,
+      40,
+      { align: 'right' },
+    );
+    doc.setDrawColor(214, 215, 217); // Paycor border grey
+    doc.setLineWidth(0.5);
+    doc.line(margin, 46, pageWidth - margin, 46);
+  }
 
+  function addFooter(pageNumber: number, totalPagesPlaceholder = '') {
+    doc.setDrawColor(214, 215, 217);
+    doc.setLineWidth(0.5);
+    doc.line(margin, pageHeight - 50, pageWidth - margin, pageHeight - 50);
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(136, 139, 141);
+    doc.text(
+      'This analysis is an estimate for business-planning purposes; it is not a guarantee of savings or clinical outcomes.',
+      margin,
+      pageHeight - 38,
+      { maxWidth: contentWidth - 80 },
+    );
+
+    const pageStr = `Page ${pageNumber}${totalPagesPlaceholder}`;
+    doc.text(pageStr, pageWidth - margin, pageHeight - 38, { align: 'right' });
+  }
+
+  function addDraftWatermark() {
+    if (customerReady) return;
+    doc.setTextColor(240, 240, 240);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(80);
+    // Render text rotated across the page
+    doc.text('PLANNING DRAFT', pageWidth / 2, pageHeight / 2, {
+      align: 'center',
+      angle: 45,
+    });
+  }
+
+  function addNewPage() {
+    doc.addPage();
+    addDraftWatermark();
+    currentY = 70;
+  }
+
+  // --- PAGE 1: TITLE & EXECUTIVE SUMMARY ---
+  addDraftWatermark();
+
+  // Paycor Orange Bar (Pantone 158: rgb(245, 130, 32))
+  doc.setFillColor(245, 130, 32);
+  doc.rect(margin, currentY, contentWidth, 6, 'F');
+  currentY += 24;
+
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(245, 130, 32);
+  doc.text('LONG-TERM CARE & SKILLED NURSING OPERATIONAL ROI', margin, currentY);
+  currentY += 18;
+
+  const titleText = isPortfolio
+    ? `${facilityInputs.chainName || 'Portfolio'} — ${portfolioResults!.facilityCount}-Facility Business Case`
+    : `Facility Business Case — ${facilityInputs.facilityName}`;
+
+  doc.setFontSize(20);
+  doc.setTextColor(59, 68, 70); // Paycor charcoal
+  const splitTitle = doc.splitTextToSize(titleText, contentWidth);
+  doc.text(splitTitle, margin, currentY);
+  currentY += splitTitle.length * 24 + 4;
+
+  if (!isPortfolio) {
+    const location = [
+      facilityInputs.facilityAddress,
+      facilityInputs.city,
+      facilityInputs.state,
+      facilityInputs.zip,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    if (location) {
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(136, 139, 141);
+      doc.text(location, margin, currentY);
+      currentY += 14;
+    }
+  }
+
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(84, 88, 90); // Paycor medium grey
+  doc.text(
+    `Prepared for ${targetAudience || 'Executive Leadership'} by ${proposerName || 'Paycor Consultant'}${proposerTitle ? `, ${proposerTitle}` : ''}.`,
+    margin,
+    currentY,
+  );
+  currentY += 14;
+
+  doc.setFontSize(8);
+  doc.setTextColor(136, 139, 141);
+  doc.text(
+    `Scenario: ${scenario.toUpperCase()} (Base ROI reflects direct & Paycor-influenced values only).`,
+    margin,
+    currentY,
+  );
+  currentY += 28;
+
+  // Executive Summary Narrative
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(59, 68, 70);
+  doc.text('Executive Summary', margin, currentY);
+  currentY += 16;
+
+  // Draw light grey box for narrative
+  const boxY = currentY;
   const narrative = buildExecutiveNarrative({
-    mode: options.mode,
-    targetAudience: options.targetAudience,
-    facility: options.facilityInputs,
-    facilityResults: options.facilityResults,
-    portfolioResults: options.portfolioResults,
-    strategicOpportunity: options.strategicOpportunity,
-    customerReady: options.customerReady,
+    mode,
+    targetAudience,
+    facility: facilityInputs,
+    facilityResults,
+    portfolioResults,
+    strategicOpportunity,
+    customerReady,
   });
 
-  const addPage = () => {
-    doc.addPage();
-    y = margin;
-  };
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(84, 88, 90);
 
-  const ensure = (height: number) => {
-    if (y + height > pageHeight - 52) addPage();
-  };
+  let narrativeHeight = 12;
+  const splitParagraphs = narrative.paragraphs.map((p) => {
+    const lines = doc.splitTextToSize(p, contentWidth - 24);
+    narrativeHeight += lines.length * 13 + 10;
+    return lines;
+  });
 
-  const line = (color: [number, number, number] = orange) => {
-    doc.setDrawColor(...color);
-    doc.setLineWidth(1.5);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 12;
-  };
+  doc.setFillColor(245, 246, 244); // Paycor bg light
+  doc.rect(margin, boxY, contentWidth, narrativeHeight, 'F');
 
-  const text = (
-    value: string,
-    size = 10,
-    color: [number, number, number] = charcoal,
-    style: 'normal' | 'bold' = 'normal',
-    gap = 5,
-  ) => {
-    doc.setFont('helvetica', style);
-    doc.setFontSize(size);
-    doc.setTextColor(...color);
-    const lines = doc.splitTextToSize(value, contentWidth);
-    const height = lines.length * (size * 1.35);
-    ensure(height + gap);
-    doc.text(lines, margin, y);
-    y += height + gap;
-  };
+  let textY = boxY + 16;
+  splitParagraphs.forEach((lines) => {
+    doc.text(lines, margin + 12, textY);
+    textY += lines.length * 13 + 10;
+  });
 
-  const section = (title: string) => {
-    ensure(34);
-    y += 8;
-    text(title, 15, charcoal, 'bold', 8);
-    line([220, 224, 228]);
-  };
+  currentY = boxY + narrativeHeight + 24;
 
-  const metricGrid = (items: Array<[string, string]>) => {
-    const columns = 2;
-    const gap = 10;
-    const cardWidth = (contentWidth - gap) / columns;
-    const cardHeight = 58;
-    for (let index = 0; index < items.length; index += columns) {
-      ensure(cardHeight + 10);
-      items.slice(index, index + columns).forEach(([label, value], offset) => {
-        const x = margin + offset * (cardWidth + gap);
-        doc.setFillColor(...light);
-        doc.setDrawColor(222, 226, 230);
-        doc.roundedRect(x, y, cardWidth, cardHeight, 7, 7, 'FD');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...grey);
-        doc.text(label.toUpperCase(), x + 10, y + 17, { maxWidth: cardWidth - 20 });
-        doc.setFontSize(15);
-        doc.setTextColor(...charcoal);
-        doc.text(value, x + 10, y + 42, { maxWidth: cardWidth - 20 });
-      });
-      y += cardHeight + 10;
-    }
-  };
+  // Executive Financial Metrics
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(59, 68, 70);
+  doc.text('Executive Financial Summary', margin, currentY);
+  currentY += 16;
 
-  const card = (title: string, body: string, value?: string) => {
-    const bodyLines = doc.splitTextToSize(body, contentWidth - 28);
-    const height = Math.max(78, 43 + bodyLines.length * 12);
-    ensure(height + 10);
-    doc.setDrawColor(220, 224, 228);
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(margin, y, contentWidth, height, 7, 7, 'FD');
-    doc.setFont('helvetica', 'bold');
+  const baseBenefit = isPortfolio
+    ? portfolioResults!.totalPaycorInfluencedBenefit
+    : facilityResults.totalPaycorInfluencedBenefit;
+  const investment = isPortfolio
+    ? portfolioResults!.totalSoftwareCost
+    : facilityResults.softwareCost;
+  const netBenefit = isPortfolio
+    ? portfolioResults!.netAnnualBenefit
+    : facilityResults.netAnnualBenefit;
+  const roi = isPortfolio ? portfolioResults!.roiPercent : facilityResults.roiPercent;
+  const bcr = isPortfolio
+    ? portfolioResults!.benefitCostRatio
+    : facilityResults.benefitCostRatio;
+  const payback = isPortfolio
+    ? portfolioResults!.paybackMonths
+    : facilityResults.paybackMonths;
+
+  const metrics = [
+    { label: 'Annual Benefit', value: money(baseBenefit) },
+    { label: 'Annual Investment', value: money(investment) },
+    { label: 'Net Annual Benefit', value: money(netBenefit) },
+    { label: 'Net ROI', value: percent(roi) },
+    { label: 'Benefit-Cost Ratio', value: bcr === null ? 'N/A' : `${bcr.toFixed(2)}x` },
+    { label: 'Payback Period', value: payback === null ? 'N/A' : `${payback.toFixed(1)} mos` },
+  ];
+
+  const colWidth = contentWidth / 3;
+  metrics.forEach((metric, index) => {
+    const row = Math.floor(index / 3);
+    const col = index % 3;
+    const itemX = margin + col * colWidth;
+    const itemY = currentY + row * 45;
+
+    doc.setFillColor(245, 246, 244);
+    doc.rect(itemX, itemY, colWidth - 8, 38, 'F');
+
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(136, 139, 141);
+    doc.text(metric.label.toUpperCase(), itemX + 8, itemY + 12);
+
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(245, 130, 32);
+    doc.text(metric.value, itemX + 8, itemY + 28);
+  });
+
+  addFooter(1);
+
+  // --- PAGE 2: VALUATION DETAIL OR PORTFOLIO DETAIL ---
+  addNewPage();
+  addHeader();
+
+  if (isPortfolio) {
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(59, 68, 70);
+    doc.text('Portfolio Facilities Breakdown', margin, currentY);
+    currentY += 20;
+
+    // Draw Portfolio Table Header
+    doc.setFillColor(245, 246, 244);
+    doc.rect(margin, currentY, contentWidth, 20, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(59, 68, 70);
+    doc.text('Facility', margin + 8, currentY + 13);
+    doc.text('Chain', margin + 180, currentY + 13);
+    doc.text('Headcount', margin + 280, currentY + 13, { align: 'right' });
+    doc.text('Annual Benefit', margin + 360, currentY + 13, { align: 'right' });
+    doc.text('Investment', margin + 430, currentY + 13, { align: 'right' });
+    doc.text('Net ROI', margin + 480, currentY + 13, { align: 'right' });
+    currentY += 20;
+
+    doc.setFont('Helvetica', 'normal');
+    portfolioResults!.facilities.forEach(({ inputs, results }) => {
+      if (currentY > pageHeight - 100) {
+        addFooter(2);
+        addNewPage();
+        addHeader();
+        doc.setFillColor(245, 246, 244);
+        doc.rect(margin, currentY, contentWidth, 20, 'F');
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Facility', margin + 8, currentY + 13);
+        doc.text('Chain', margin + 180, currentY + 13);
+        doc.text('Headcount', margin + 280, currentY + 13, { align: 'right' });
+        doc.text('Annual Benefit', margin + 360, currentY + 13, { align: 'right' });
+        doc.text('Investment', margin + 430, currentY + 13, { align: 'right' });
+        doc.text('Net ROI', margin + 480, currentY + 13, { align: 'right' });
+        currentY += 20;
+        doc.setFont('Helvetica', 'normal');
+      }
+
+      doc.setDrawColor(214, 215, 217);
+      doc.line(margin, currentY, margin + contentWidth, currentY);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text(doc.splitTextToSize(inputs.facilityName, 160)[0], margin + 8, currentY + 13);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(inputs.chainName ? doc.splitTextToSize(inputs.chainName, 90)[0] : '—', margin + 180, currentY + 13);
+      doc.text(Math.round(inputs.headcount).toLocaleString(), margin + 280, currentY + 13, { align: 'right' });
+      doc.text(money(results.totalPaycorInfluencedBenefit), margin + 360, currentY + 13, { align: 'right' });
+      doc.text(money(results.softwareCost), margin + 430, currentY + 13, { align: 'right' });
+      doc.text(percent(results.roiPercent), margin + 480, currentY + 13, { align: 'right' });
+
+      currentY += 20;
+    });
+  } else {
+    // Facility Profile
+    doc.setFont('Helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(...charcoal);
-    doc.text(title, margin + 14, y + 20);
-    if (value) {
-      doc.setTextColor(...orange);
-      doc.text(value, pageWidth - margin - 14, y + 20, { align: 'right' });
+    doc.setTextColor(59, 68, 70);
+    doc.text('Facility Operational Profile', margin, currentY);
+    currentY += 16;
+
+    const profile = [
+      { label: 'Headcount', value: Math.round(facilityInputs.headcount).toLocaleString() },
+      { label: 'Hourly Wage', value: money(facilityInputs.hourlyRate) },
+      { label: 'Turnover Rate', value: `${facilityInputs.turnoverRate.toFixed(1)}%` },
+      { label: 'CMS Rating', value: `${facilityInputs.overallRating.toFixed(1)} Stars` },
+    ];
+
+    profile.forEach((item, index) => {
+      const itemX = margin + index * (contentWidth / 4);
+      doc.setFillColor(245, 246, 244);
+      doc.rect(itemX, currentY, contentWidth / 4 - 6, 28, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(136, 139, 141);
+      doc.text(item.label.toUpperCase(), itemX + 6, currentY + 10);
+      doc.setFontSize(9);
+      doc.setTextColor(59, 68, 70);
+      doc.text(item.value, itemX + 6, currentY + 22);
+    });
+    currentY += 40;
+
+    // Value Build Table
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Value Build Detail', margin, currentY);
+    currentY += 16;
+
+    doc.setFillColor(245, 246, 244);
+    doc.rect(margin, currentY, contentWidth, 20, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(59, 68, 70);
+    doc.text('Value Driver', margin + 8, currentY + 13);
+    doc.text('Class', margin + 140, currentY + 13);
+    doc.text('Burden', margin + 210, currentY + 13, { align: 'right' });
+    doc.text('Improvement', margin + 290, currentY + 13, { align: 'right' });
+    doc.text('Attribution', margin + 360, currentY + 13, { align: 'right' });
+    doc.text('Annual Benefit', margin + 460, currentY + 13, { align: 'right' });
+    currentY += 20;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8);
+
+    facilityResults.valueLineItems
+      .filter((item) => item.includedInBaseROI)
+      .forEach((item) => {
+        doc.setDrawColor(214, 215, 217);
+        doc.line(margin, currentY, margin + contentWidth, currentY);
+
+        doc.setFont('Helvetica', 'bold');
+        doc.text(item.label, margin + 8, currentY + 13);
+        doc.setFont('Helvetica', 'normal');
+        doc.text(item.evidenceClass, margin + 140, currentY + 13);
+        doc.text(item.currentBurden > 0 ? money(item.currentBurden) : '—', margin + 210, currentY + 13, { align: 'right' });
+        doc.text(item.attainableImprovement > 0 ? `${(item.attainableImprovement * 100).toFixed(0)}%` : '—', margin + 290, currentY + 13, { align: 'right' });
+        doc.text(item.paycorAttribution > 0 ? `${(item.paycorAttribution * 100).toFixed(0)}%` : '—', margin + 360, currentY + 13, { align: 'right' });
+        doc.text(money(item.annualBenefit), margin + 460, currentY + 13, { align: 'right' });
+
+        const detailLines = doc.splitTextToSize(item.explanation, contentWidth - 16);
+        currentY += 18;
+        doc.setFont('Helvetica', 'italic');
+        doc.setFontSize(7);
+        doc.setTextColor(136, 139, 141);
+        doc.text(detailLines, margin + 8, currentY + 2);
+        currentY += detailLines.length * 9 + 4;
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(84, 88, 90);
+      });
+  }
+
+  addFooter(2);
+
+  // --- PAGE 3: STRATEGIC OPPORTUNITY ---
+  addNewPage();
+  addHeader();
+
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(59, 68, 70);
+  doc.text('Strategic Downstream Opportunity', margin, currentY);
+  currentY += 14;
+
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(136, 139, 141);
+  const discLines = doc.splitTextToSize(strategicOpportunity.disclosure, contentWidth);
+  doc.text(discLines, margin, currentY);
+  currentY += discLines.length * 11 + 16;
+
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(59, 68, 70);
+  doc.text(
+    `Unlocking correlated strategic value: ${money(strategicOpportunity.valueLow)} – ${money(strategicOpportunity.valueHigh)}`,
+    margin,
+    currentY,
+  );
+  currentY += 16;
+
+  strategicOpportunity.modules.forEach((module) => {
+    if (currentY > pageHeight - 160) {
+      addFooter(3);
+      addNewPage();
+      addHeader();
     }
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(...grey);
-    doc.text(bodyLines, margin + 14, y + 40);
-    y += height + 10;
-  };
 
-  // Cover and executive summary
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...orange);
-  doc.text('LONG-TERM CARE & SKILLED NURSING OPERATIONAL ROI', margin, y);
-  y += 22;
-  doc.setFontSize(24);
-  doc.setTextColor(...charcoal);
-  const title = isPortfolio
-    ? `${options.facilityInputs.chainName || 'Portfolio'} Business Case`
-    : `${options.facilityInputs.facilityName} Business Case`;
-  const titleLines = doc.splitTextToSize(title, contentWidth);
-  doc.text(titleLines, margin, y);
-  y += titleLines.length * 29 + 5;
+    doc.setDrawColor(214, 215, 217);
+    doc.line(margin, currentY, margin + contentWidth, currentY);
+    currentY += 14;
 
-  const location = [
-    options.facilityInputs.facilityAddress,
-    options.facilityInputs.city,
-    options.facilityInputs.state,
-    options.facilityInputs.zip,
-  ].filter(Boolean).join(' · ');
-  if (!isPortfolio && location) text(location, 9, grey, 'normal', 3);
-  if (options.facilityInputs.chainName) text(`Chain / operator: ${options.facilityInputs.chainName}`, 9, grey, 'normal', 3);
-  text(
-    `Prepared for ${options.targetAudience || 'Executive Leadership'} by ${options.proposerName || 'Paycor Consultant'}${options.proposerTitle ? `, ${options.proposerTitle}` : ''}.`,
-    10,
-    grey,
-    'normal',
-    8,
-  );
-  line();
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(59, 68, 70);
+    doc.text(module.title, margin, currentY);
 
-  if (!options.customerReady) {
-    doc.setFillColor(255, 248, 230);
-    doc.setDrawColor(239, 190, 70);
-    doc.roundedRect(margin, y, contentWidth, 45, 6, 6, 'FD');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(130, 90, 10);
-    doc.text('PLANNING DRAFT — CONTAINS ESTIMATED OR INTERNAL-ONLY INPUTS', margin + 12, y + 18);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Validate flagged values and approved Paycor pricing before external distribution.', margin + 12, y + 34);
-    y += 58;
-  }
+    if (module.valueIncludedInRange && module.valueHigh > 0) {
+      doc.text(`${money(module.valueLow)} – ${money(module.valueHigh)}`, pageWidth - margin, currentY, { align: 'right' });
+    }
+    currentY += 12;
 
-  section('Executive Summary');
-  narrative.paragraphs.forEach((paragraph) => text(paragraph, 10, charcoal, 'normal', 8));
-
-  metricGrid([
-    ['Annual Paycor-influenced benefit', money(baseBenefit)],
-    ['Annual investment', money(investment)],
-    ['Net annual benefit', money(netBenefit)],
-    ['Net ROI', roi === null ? 'N/A' : `${roi.toFixed(0)}%`],
-    ['Benefit-cost ratio', ratio === null ? 'N/A' : `${ratio.toFixed(2)}x`],
-    ['Payback period', payback === null ? 'N/A' : `${payback.toFixed(1)} months`],
-    ['Break-even realization', breakEven === null ? 'N/A' : `${(breakEven * 100).toFixed(0)}%`],
-    ['Investment per employee', pepm > 0 ? `${money(pepm)} PEPM` : 'N/A'],
-  ]);
-
-  section('Base Value Reconciliation');
-  const lineItems = isPortfolio
-    ? options.portfolioResults!.facilities.flatMap((item) =>
-        item.results.valueLineItems.filter((lineItem) => lineItem.includedInBaseROI),
-      )
-    : options.facilityResults.valueLineItems.filter((lineItem) => lineItem.includedInBaseROI);
-  const aggregated = lineItems.reduce<Record<string, { benefit: number; burden: number; evidence: string; explanation: string }>>(
-    (rows, item) => {
-      const existing = rows[item.label] || { benefit: 0, burden: 0, evidence: item.evidenceClass, explanation: item.explanation };
-      existing.benefit += item.annualBenefit;
-      existing.burden += item.currentBurden;
-      rows[item.label] = existing;
-      return rows;
-    },
-    {},
-  );
-  Object.entries(aggregated).forEach(([label, item]) =>
-    card(
-      label,
-      `${item.explanation} Evidence classification: ${item.evidence}. Current modeled burden: ${money(item.burden)}.`,
-      money(item.benefit),
-    ),
-  );
-
-  section('Strategic Downstream Opportunity');
-  text(
-    `${options.strategicOpportunity.disclosure} Modeled range: ${money(options.strategicOpportunity.valueLow)}–${money(options.strategicOpportunity.valueHigh)}.`,
-    9,
-    grey,
-    'normal',
-    8,
-  );
-  options.strategicOpportunity.modules.forEach((module) =>
-    card(
-      module.title,
-      `${module.currentCondition} ${module.narrative} Method: ${module.methodology}`,
-      module.valueIncludedInRange && module.valueHigh > 0
-        ? `${money(module.valueLow)}–${money(module.valueHigh)}`
-        : 'Qualitative',
-    ),
-  );
-
-  section('Recommended Next Steps');
-  [
-    narrative.nextStep,
-    'Validate headcount, wage, overtime, agency, PBJ labor, Medicare Part A revenue, and technology contracts with the appropriate data owners.',
-    'Confirm which technology contracts can actually be retired and the effective renewal dates.',
-    'Establish baseline measures and named owners for 90-day and 180-day post-implementation value reviews.',
-  ].forEach((item, index) => text(`${index + 1}. ${item}`, 10, charcoal, 'normal', 7));
-
-  if (options.includeAppendix) {
-    section('Methodology Appendix');
-    text('Input data provenance', 12, charcoal, 'bold', 6);
-    const sourceEntries = Object.entries(options.facilityInputs.inputSources || {}).sort(([a], [b]) => a.localeCompare(b));
-    sourceEntries.forEach(([field, record]) => {
-      const context = [record.label, record.confidence ? `Confidence: ${record.confidence}` : '', record.method || '', record.note || '']
-        .filter(Boolean)
-        .join(' | ');
-      card(formatField(field), context, record.source.toUpperCase());
-    });
-
-    text('Scenario assumptions', 12, charcoal, 'bold', 6);
-    ASSUMPTION_DEFINITIONS.forEach((definition) => {
-      const value = options.assumptions[definition.key];
-      card(
-        definition.label,
-        `${definition.description} Source context: ${definition.sourceLabel}.`,
-        definition.isPercentage ? `${(value * 100).toFixed(1)}%` : value.toFixed(2),
-      );
-    });
-  }
-
-  // Footers and draft watermark
-  const pages = doc.getNumberOfPages();
-  for (let page = 1; page <= pages; page += 1) {
-    doc.setPage(page);
-    doc.setDrawColor(225, 228, 232);
-    doc.line(margin, pageHeight - 34, pageWidth - margin, pageHeight - 34);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.setTextColor(...grey);
-    doc.text('Planning estimate — not a guarantee of savings, clinical results, CMS ratings, reimbursement, or census.', margin, pageHeight - 20);
-    doc.text(`${page} / ${pages}`, pageWidth - margin, pageHeight - 20, { align: 'right' });
-    if (!options.customerReady) {
-      doc.setTextColor(220, 220, 220);
-      doc.setFontSize(44);
-      doc.setFont('helvetica', 'bold');
-      doc.text('DRAFT', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 35 });
-    }
+    doc.setTextColor(245, 130, 32);
+    doc.text(module.statusLabel.toUpperCase(), margin, currentY);
+    currentY += 12;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(84, 88, 90);
+    const narrativeLines = doc.splitTextToSize(module.narrative, contentWidth);
+    doc.text(narrativeLines, margin, currentY);
+    currentY += narrativeLines.length * 11 + 6;
+
+    doc.setFont('Helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(136, 139, 141);
+    const methLines = doc.splitTextToSize(`Methodology: ${module.methodology}`, contentWidth);
+    doc.text(methLines, margin, currentY);
+    currentY += methLines.length * 10 + 12;
+  });
+
+  addFooter(3);
+
+  // --- PAGE 4: APPENDIX (IF REQUESTED) ---
+  if (includeAppendix) {
+    addNewPage();
+    addHeader();
+
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(59, 68, 70);
+    doc.text('Methodology Appendix: Scenario Assumptions', margin, currentY);
+    currentY += 18;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(84, 88, 90);
+
+    ASSUMPTION_DEFINITIONS.forEach((definition) => {
+      if (currentY > pageHeight - 120) {
+        addFooter(4);
+        addNewPage();
+        addHeader();
+      }
+
+      doc.setDrawColor(214, 215, 217);
+      doc.line(margin, currentY, margin + contentWidth, currentY);
+      currentY += 14;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(59, 68, 70);
+      doc.text(definition.label, margin, currentY);
+
+      const val = assumptions[definition.key];
+      const valStr = definition.isPercentage ? `${(val * 100).toFixed(1)}%` : val.toFixed(2);
+      doc.text(valStr, pageWidth - margin, currentY, { align: 'right' });
+      currentY += 12;
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(84, 88, 90);
+      const descLines = doc.splitTextToSize(definition.description, contentWidth);
+      doc.text(descLines, margin, currentY);
+      currentY += descLines.length * 10 + 6;
+
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(136, 139, 141);
+      doc.text(`Evidence Class: ${definition.evidenceClass.toUpperCase()} · Source: ${definition.sourceLabel}`, margin, currentY);
+      currentY += 14;
+    });
+
+    addFooter(4);
   }
 
-  const date = new Date().toISOString().slice(0, 10);
-  const name = isPortfolio
-    ? options.facilityInputs.chainName || 'LTC_Portfolio'
-    : options.facilityInputs.facilityName;
-  const fileName = `${safeFileName(name)}_ROI_Assessment_${date}${options.customerReady ? '' : '_DRAFT'}.pdf`;
-  doc.save(fileName);
-  return fileName;
-}
+  // Save the PDF
+  const filename = isPortfolio
+    ? `Paycor_LTC_ROI_Portfolio_Assessment.pdf`
+    : `Paycor_LTC_ROI_Facility_Assessment_${facilityInputs.facilityName.replace(/\s+/g, '_')}.pdf`;
 
-function formatField(field: string) {
-  return field
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/^./, (character) => character.toUpperCase());
+  doc.save(filename);
 }

@@ -23,7 +23,7 @@ import AssumptionsPanel from '@/components/assumptions-panel';
 import PrintableReport from '@/components/printable-report';
 import EstimateAssistant from '@/components/estimate-assistant';
 import StrategicOpportunityCard from '@/components/strategic-opportunity-card';
-import HelpTooltip from '@/components/help-tooltip';
+import { buildExecutiveNarrative } from '@/lib/executive-narrative';
 import {
   calculateFacilityROI,
   calculatePortfolioROI,
@@ -58,7 +58,7 @@ const DEFAULT_TECH_COSTS: TechCostMap = {
 };
 
 const TRACKED_INPUT_FIELDS = new Set<TrackedInputField>([
-  'facilityName', 'ccn', 'state', 'chainName', 'certifiedBeds',
+  'facilityName', 'facilityAddress', 'city', 'state', 'zip', 'ccn', 'chainName', 'chainFacilities', 'certifiedBeds',
   'averageResidentsPerDay', 'reportedRnStaffingHprd',
   'reportedNurseAideStaffingHprd', 'reportedTotalNurseStaffingHprd',
   'headcount', 'hourlyRate',
@@ -149,6 +149,7 @@ export default function LtcRoiCalculator() {
   );
   const [showReport, setShowReport] = useState(false);
   const [showEstimateAssistant, setShowEstimateAssistant] = useState(false);
+  const [showTechBreakdown, setShowTechBreakdown] = useState(false);
   const [proposerName, setProposerName] = useState('Paycor Consultant');
   const [proposerTitle, setProposerTitle] = useState('Long-Term Care Advisor');
   const [targetAudience, setTargetAudience] = useState('Executive Leadership Team');
@@ -173,6 +174,17 @@ export default function LtcRoiCalculator() {
         : calculatePortfolioROI([facility], assumptions),
     [portfolio, portfolioResults, facility, assumptions],
   );
+
+  const portfolioGroups = useMemo(() => {
+    return (portfolio.length > 0 ? portfolio : [facility]).reduce<Record<string, FacilityROICalculatorInputs[]>>(
+      (groups, item) => {
+        const key = item.chainName?.trim() || 'Independent / Chain not reported';
+        groups[key] = [...(groups[key] || []), item];
+        return groups;
+      },
+      {},
+    );
+  }, [portfolio, facility]);
 
   const conservativeAssumptions = useMemo(
     () => getScenarioAssumptions('conservative'),
@@ -272,8 +284,12 @@ export default function LtcRoiCalculator() {
       return {
         ...current,
         ccn: metrics.ccn ?? current.ccn,
+        facilityAddress: metrics.facilityAddress ?? current.facilityAddress,
+        city: metrics.city ?? current.city,
         state: metrics.state ?? current.state,
+        zip: metrics.zip ?? current.zip,
         chainName: metrics.chainName ?? current.chainName,
+        chainFacilities: metrics.chainFacilities ?? current.chainFacilities,
         certifiedBeds: metrics.certifiedBeds ?? current.certifiedBeds,
         averageResidentsPerDay:
           metrics.averageResidentsPerDay ?? current.averageResidentsPerDay,
@@ -337,11 +353,11 @@ export default function LtcRoiCalculator() {
       id: createFacilityId(),
       facilityName: 'New Facility',
       currentTechCosts: { ...DEFAULT_TECH_COSTS },
-      strategicRefinements: {
-        staffingConstrainedAdmissions: 'unknown',
-        cmsObjective: 'unknown',
-        activeComplianceRemediation: 'unknown',
-      },
+  strategicRefinements: {
+    staffingConstrainedAdmissions: 'unknown',
+    cmsObjective: 'unknown',
+    activeComplianceRemediation: 'unknown',
+  },
     });
     setActiveStep(1);
   };
@@ -393,7 +409,8 @@ export default function LtcRoiCalculator() {
       }
       setAiStrategy(data.advisory || '');
     } catch (error: any) {
-      setAiStrategyError(error.message || 'Unable to generate advisory report.');
+      console.error('AI advisory unavailable', error);
+      setAiStrategyError('AI advisory is temporarily unavailable. The verified financial report remains available.');
     } finally {
       setAiStrategyLoading(false);
     }
@@ -409,6 +426,7 @@ export default function LtcRoiCalculator() {
           roi: effectivePortfolioResults.roiPercent,
           payback: effectivePortfolioResults.paybackMonths,
           benefitCostRatio: effectivePortfolioResults.benefitCostRatio,
+          breakEven: effectivePortfolioResults.breakEvenRealizationRate,
           strategicUpside: effectivePortfolioResults.totalStrategicUpside,
         }
       : {
@@ -419,8 +437,45 @@ export default function LtcRoiCalculator() {
           roi: facilityResults.roiPercent,
           payback: facilityResults.paybackMonths,
           benefitCostRatio: facilityResults.benefitCostRatio,
+          breakEven: facilityResults.breakEvenRealizationRate,
           strategicUpside: facilityResults.totalStrategicUpside,
         };
+
+  const criticalFields: TrackedInputField[] = [
+    'headcount',
+    'hourlyRate',
+    'overtimeHoursPerYear',
+    'weeklyAgencyHours',
+    'agencyHourlyRate',
+    'pbjHoursPerMonth',
+    'softwareCost',
+  ];
+  const sourceRecords = Object.values(facility.inputSources || {});
+  const readinessCounts = sourceRecords.reduce<Record<string, number>>((counts, record) => {
+    counts[record.source] = (counts[record.source] || 0) + 1;
+    return counts;
+  }, {});
+  const readinessFacilities = mode === 'portfolio'
+    ? (portfolio.length > 0 ? portfolio : [facility])
+    : [facility];
+  const blockingInputs = readinessFacilities.flatMap((item) =>
+    criticalFields
+      .filter((field) => {
+        const record = item.inputSources?.[field];
+        return !record || record.source === 'default' || record.reportable === false;
+      })
+      .map((field) => mode === 'portfolio' ? `${item.facilityName}: ${field}` : field),
+  );
+  const customerReady = blockingInputs.length === 0;
+  const executiveNarrative = buildExecutiveNarrative({
+    mode,
+    targetAudience,
+    facility,
+    facilityResults,
+    portfolioResults: effectivePortfolioResults,
+    strategicOpportunity,
+    customerReady,
+  });
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8 text-paycor-charcoal">
@@ -539,12 +594,30 @@ export default function LtcRoiCalculator() {
             </button>
           </section>
 
+          <section className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-extrabold">Data Readiness</h2>
+                <span className={`rounded-full border px-2 py-0.5 text-[8px] uppercase font-extrabold ${customerReady ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                  {customerReady ? 'Customer ready' : `${blockingInputs.length} key values to validate`}
+                </span>
+              </div>
+              <p className="text-[10px] text-paycor-medium-grey mt-1">
+                {readinessCounts.cms || 0} CMS fields · {readinessCounts.prospect || 0} prospect-confirmed · {readinessCounts.estimate || 0} estimates · {readinessCounts.default || 0} defaults
+              </p>
+            </div>
+            {!customerReady && (
+              <button type="button" onClick={() => setShowEstimateAssistant(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-paycor-medium-grey">
+                Review unconfirmed values
+              </button>
+            )}
+          </section>
+
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
             <SectionHeader
               icon={<Building2 className="w-4 h-4" />}
               title="Facility and CMS Quality Profile"
               description="CMS Five-Star ratings are separate from the SNF Value-Based Purchasing program."
-              tooltipText="Baseline quality rating profiles are loaded directly from the authoritative CMS Nursing Home General Information dataset based on the provider CCN. Modeled ratings are used to project quality-driven referral scenarios."
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <TextInput
@@ -554,6 +627,20 @@ export default function LtcRoiCalculator() {
                 className="sm:col-span-2"
                 source={facility.inputSources?.facilityName}
               />
+              <TextInput
+                label="Chain / Operator"
+                value={facility.chainName || ''}
+                onChange={(value) => updateFacility('chainName', value)}
+                className="sm:col-span-2"
+                source={facility.inputSources?.chainName}
+              />
+              {(facility.facilityAddress || facility.city || facility.state) && (
+                <div className="sm:col-span-2 lg:col-span-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-paycor-grey">Facility location</p>
+                  <p className="text-xs font-bold mt-1">{[facility.facilityAddress, facility.city, facility.state, facility.zip].filter(Boolean).join(' · ')}</p>
+                  {facility.ccn && <p className="text-[9px] text-paycor-grey mt-1">CCN {facility.ccn}{facility.chainFacilities ? ` · ${facility.chainFacilities} CMS-reported facilities in chain` : ''}</p>}
+                </div>
+              )}
               <StarSelect
                 label="CMS Overall Rating"
                 value={facility.overallRating}
@@ -578,12 +665,6 @@ export default function LtcRoiCalculator() {
                 onChange={(value) => updateFacility('qualityMeasureRating', value)}
                 source={facility.inputSources?.qualityMeasureRating}
               />
-              <StarSelect
-                label="Modeled Overall Rating"
-                value={facility.projectedOverallRating}
-                onChange={(value) => updateFacility('projectedOverallRating', value)}
-                source={facility.inputSources?.projectedOverallRating}
-              />
               <NumberInput
                 label="Health Deficiencies"
                 value={facility.healthDeficiencies}
@@ -605,62 +686,75 @@ export default function LtcRoiCalculator() {
               icon={<Users className="w-4 h-4" />}
               title="Workforce and Premium Labor Drivers"
               description="Use prospect actuals whenever available. CMS-reported values are labeled; other fields require prospect confirmation."
-              tooltipText="Turnover replacements use headcount × turnover rate × average cost per replacement (derived from annual salary metrics). Overtime premium models the half-time premium portion (0.5 × rate × hours). Weekly agency premium represents agency hourly rate minus internal loaded hourly rate."
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <NumberInput label="Total Headcount" value={facility.headcount} source={facility.inputSources?.headcount} onChange={(value) => updateFacility('headcount', value)} />
-              <NumberInput label="Average Hourly Rate" value={facility.hourlyRate} source={facility.inputSources?.hourlyRate} prefix="$" onChange={(value) => updateFacility('hourlyRate', value)} />
-              <NumberInput label="Admin Loaded Hourly Rate" value={facility.adminLoadedHourlyRate} source={facility.inputSources?.adminLoadedHourlyRate} prefix="$" onChange={(value) => updateFacility('adminLoadedHourlyRate', value)} />
-              <NumberInput label="General Turnover" value={facility.turnoverRate} source={facility.inputSources?.turnoverRate} suffix="%" onChange={(value) => updateFacility('turnoverRate', value)} />
-              <NumberInput label="RN Turnover" value={facility.rnTurnover} source={facility.inputSources?.rnTurnover} suffix="%" onChange={(value) => updateFacility('rnTurnover', value)} />
+              <NumberInput label="Average Hourly Rate" value={facility.hourlyRate} source={facility.inputSources?.hourlyRate} prefix="$" decimals={2} onChange={(value) => updateFacility('hourlyRate', value)} />
+              <NumberInput label="General Turnover" value={facility.turnoverRate} source={facility.inputSources?.turnoverRate} suffix="%" decimals={1} onChange={(value) => updateFacility('turnoverRate', value)} />
+              <NumberInput label="RN Turnover" value={facility.rnTurnover} source={facility.inputSources?.rnTurnover} suffix="%" decimals={1} onChange={(value) => updateFacility('rnTurnover', value)} />
               <NumberInput label="PBJ Prep Hours / Month" value={facility.pbjHoursPerMonth} source={facility.inputSources?.pbjHoursPerMonth} onChange={(value) => updateFacility('pbjHoursPerMonth', value)} />
               <NumberInput label="Annual Overtime Hours" value={facility.overtimeHoursPerYear} source={facility.inputSources?.overtimeHoursPerYear} onChange={(value) => updateFacility('overtimeHoursPerYear', value)} />
               <NumberInput label="Weekly Agency Hours" value={facility.weeklyAgencyHours} source={facility.inputSources?.weeklyAgencyHours} onChange={(value) => updateFacility('weeklyAgencyHours', value)} />
-              <NumberInput label="Agency Hourly Rate" value={facility.agencyHourlyRate} source={facility.inputSources?.agencyHourlyRate} prefix="$" onChange={(value) => updateFacility('agencyHourlyRate', value)} />
+              <NumberInput label="Agency Hourly Rate" value={facility.agencyHourlyRate} source={facility.inputSources?.agencyHourlyRate} prefix="$" decimals={2} onChange={(value) => updateFacility('agencyHourlyRate', value)} />
             </div>
+            <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <summary className="cursor-pointer text-[10px] font-extrabold text-paycor-medium-grey">Advanced PBJ costing input</summary>
+              <div className="mt-3 max-w-sm">
+                <NumberInput label="Admin Loaded Hourly Rate" value={facility.adminLoadedHourlyRate} source={facility.inputSources?.adminLoadedHourlyRate} prefix="$" decimals={2} onChange={(value) => updateFacility('adminLoadedHourlyRate', value)} />
+              </div>
+            </details>
           </section>
 
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
             <SectionHeader
               icon={<BarChart3 className="w-4 h-4" />}
-              title="Financial and Strategic Inputs"
-              description="Strategic values are displayed separately from the base ROI calculation."
-              tooltipText="Calculates maximum SNF VBP exposure (2% of Medicare Part A revenue) and potential resident protection values (avg monthly value × protected residents × 12). Soft cost investment sets the denominator for base ROI."
+              title="Investment Input"
+              description="Keep the primary diagnostic flow focused. Strategic financial refinements appear beside the downstream scenario they affect."
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <NumberInput label="Annual Medicare FFS Part A Revenue" value={facility.annualMedicarePartARevenue} source={facility.inputSources?.annualMedicarePartARevenue} prefix="$" onChange={(value) => updateFacility('annualMedicarePartARevenue', value)} />
-              <NumberInput label="Average Monthly Resident Value" value={facility.avgMonthlyResidentValue} source={facility.inputSources?.avgMonthlyResidentValue} prefix="$" onChange={(value) => updateFacility('avgMonthlyResidentValue', value)} />
-              <NumberInput label="Referrals per Rating Level" value={facility.referralsPerStarLevel} source={facility.inputSources?.referralsPerStarLevel} onChange={(value) => updateFacility('referralsPerStarLevel', value)} />
-              <NumberInput label="Prospect-Estimated Compliance Exposure" value={facility.complianceRiskExposure} source={facility.inputSources?.complianceRiskExposure} prefix="$" onChange={(value) => updateFacility('complianceRiskExposure', value)} />
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(260px,360px)_1fr] gap-4 items-start">
               <NumberInput label="Annual Paycor Investment" value={facility.softwareCost} source={facility.inputSources?.softwareCost} prefix="$" onChange={(value) => updateFacility('softwareCost', value)} />
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[10px] leading-relaxed text-paycor-medium-grey">
+                When an approved quote is unavailable, the Guided Estimate Assistant uses <strong>$20 PEPM</strong> with no hidden annual base fee. Medicare Part A revenue, resident value, modeled rating, referral assumptions and compliance exposure are refined later inside the Strategic Downstream Opportunity card.
+              </div>
             </div>
           </section>
 
           <section className="bg-white border border-paycor-border-grey rounded-2xl shadow-sm p-6">
             <SectionHeader
               icon={<Layers3 className="w-4 h-4" />}
-              title="Retirable Technology Spend"
-              description="Enter recurring costs only for tools that can realistically be eliminated or not renewed."
-              tooltipText="Sum of current redundant or retirable software systems. Avoided software costs are counted once as an annual benefit based on the scenario's technology-avoidance rate."
+              title="Technology Consolidation Opportunity"
+              description="Estimate the fragmented stack at up to $33 PEPM, then include only systems that can realistically be consolidated, eliminated or not renewed."
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(Object.keys(facility.currentTechCosts) as (keyof TechCostMap)[]).map((key) => (
-                <NumberInput
-                  key={key}
-                  label={techCostLabels[key]}
-                  value={facility.currentTechCosts[key]}
-                  prefix="$"
-                  onChange={(value) => updateTechCost(key, value)}
-                />
-              ))}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <p className="text-[9px] uppercase tracking-wider font-bold text-paycor-grey">Current technology stack estimate</p>
+                <p className="text-2xl font-black mt-1">{money(facilityResults.totalCurrentTechSpend)}</p>
+                <p className="text-[9px] text-paycor-grey mt-1">{facility.headcount > 0 ? `${money(facilityResults.totalCurrentTechSpend / facility.headcount / 12)} PEPM across enabled systems` : 'Headcount required for PEPM comparison'}</p>
+              </div>
+              <button type="button" onClick={() => setShowTechBreakdown((value) => !value)} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-paycor-medium-grey">
+                {showTechBreakdown ? 'Hide system breakdown' : 'View / edit system breakdown'}
+              </button>
             </div>
+            {showTechBreakdown && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(Object.keys(facility.currentTechCosts) as (keyof TechCostMap)[]).map((key) => (
+                  <NumberInput
+                    key={key}
+                    label={techCostLabels[key]}
+                    value={facility.currentTechCosts[key]}
+                    prefix="$"
+                    onChange={(value) => updateTechCost(key, value)}
+                  />
+                ))}
+              </div>
+            )}
             <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
               <div>
-                <p className="text-[10px] uppercase tracking-wider font-bold text-paycor-grey">Current Technology Spend</p>
+                <p className="text-[11px] font-bold text-paycor-medium-grey">Technology Consolidation Baseline</p>
                 <p className="text-xl font-black mt-1">{money(facilityResults.totalCurrentTechSpend)}</p>
               </div>
               <p className="text-[10px] text-paycor-medium-grey max-w-lg text-right">
-                This amount is not deducted from the software investment. The confirmed retirable portion is counted once as annual avoided cost.
+                This amount is not deducted from the Paycor investment. The confirmed consolidatable portion is counted once as annual avoided cost based on the selected scenario.
               </p>
             </div>
           </section>
@@ -690,6 +784,7 @@ export default function LtcRoiCalculator() {
                     <thead className="text-left bg-slate-50">
                       <tr>
                         <th className="p-2">Facility</th>
+                        <th className="p-2">Location</th>
                         <th className="p-2">Headcount</th>
                         <th className="p-2">Turnover</th>
                         <th className="p-2">Investment</th>
@@ -697,21 +792,29 @@ export default function LtcRoiCalculator() {
                       </tr>
                     </thead>
                     <tbody>
-                      {portfolio.map((item) => (
-                        <tr key={item.id} className="border-t border-slate-100">
-                          <td className="p-2 font-bold">{item.facilityName}</td>
-                          <td className="p-2">{number(item.headcount)}</td>
-                          <td className="p-2">{number(item.turnoverRate, 1)}%</td>
-                          <td className="p-2">{money(item.softwareCost)}</td>
-                          <td className="p-2">
-                            <div className="flex justify-end gap-1">
-                              <button type="button" onClick={() => editPortfolioFacility(item)} className="px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold">Edit</button>
-                              <button type="button" onClick={() => removePortfolioFacility(item.id)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" aria-label={`Remove ${item.facilityName}`}>
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                      {Object.entries(portfolioGroups).map(([chain, items]) => (
+                        <React.Fragment key={chain}>
+                          <tr className="border-t border-slate-200 bg-slate-50">
+                            <td colSpan={6} className="p-2 text-[10px] font-extrabold text-paycor-medium-grey">{chain} · {items.length} facilit{items.length === 1 ? 'y' : 'ies'}</td>
+                          </tr>
+                          {items.map((item) => (
+                            <tr key={item.id || item.ccn || item.facilityName} className="border-t border-slate-100">
+                              <td className="p-2 font-bold">{item.facilityName}</td>
+                              <td className="p-2 text-paycor-grey">{[item.city, item.state].filter(Boolean).join(', ') || '—'}</td>
+                              <td className="p-2">{number(item.headcount)}</td>
+                              <td className="p-2">{number(item.turnoverRate, 1)}%</td>
+                              <td className="p-2">{money(item.softwareCost)}</td>
+                              <td className="p-2">
+                                <div className="flex justify-end gap-1">
+                                  <button type="button" onClick={() => editPortfolioFacility(item)} className="px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold">Edit</button>
+                                  <button type="button" onClick={() => removePortfolioFacility(item.id)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" aria-label={`Remove ${item.facilityName}`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -742,7 +845,6 @@ export default function LtcRoiCalculator() {
               icon={<BarChart3 className="w-4 h-4" />}
               title={mode === 'portfolio' ? 'Portfolio Value Reconciliation' : 'Facility Value Reconciliation'}
               description="The base business case uses direct and Paycor-influenced outcomes. Strategic correlated value remains outside base ROI."
-              tooltipText="Reconciles gross operational burdens against achievable improvement. Base Net Benefit = Paycor-Influenced Benefit minus Software Cost. Strategic correlated benefits are strictly excluded here."
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <SummaryCard label="Current Direct Opportunity" value={money(summary.directOpportunity)} />
@@ -820,7 +922,13 @@ export default function LtcRoiCalculator() {
           <StrategicOpportunityCard
             mode={mode}
             summary={strategicOpportunity}
+            inputs={mode === 'facility' ? facility : undefined}
             refinements={facility.strategicRefinements}
+            onStrategicInputChange={
+              mode === 'facility'
+                ? (field, value) => updateFacility(field, value)
+                : undefined
+            }
             onRefinementsChange={
               mode === 'facility'
                 ? (strategicRefinements) =>
@@ -847,17 +955,24 @@ export default function LtcRoiCalculator() {
               icon={<CheckCircle2 className="w-4 h-4" />}
               title="Board-Ready Financial Case"
               description="Net ROI is calculated as (Paycor-influenced annual benefit − annual investment) ÷ annual investment."
-              tooltipText="Net ROI = (Paycor-Influenced Benefit − software cost) ÷ software cost. Benefit-Cost Ratio = Paycor-Influenced Benefit ÷ software cost. Payback Period = (software cost ÷ Paycor-Influenced Benefit) × 12 months."
             />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 mb-5">
+              <h3 className="text-sm font-extrabold">{executiveNarrative.headline}</h3>
+              <div className="mt-3 space-y-2">
+                {executiveNarrative.paragraphs.map((paragraph, index) => (
+                  <p key={index} className="text-[11px] leading-relaxed text-paycor-medium-grey">{paragraph}</p>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <ExecutiveMetric label="Paycor-Influenced Benefit" value={money(summary.baseBenefit)} />
+              <ExecutiveMetric label="Annual Investment" value={money(summary.investment)} />
               <ExecutiveMetric label="Net Annual Benefit" value={money(summary.netBenefit)} />
               <ExecutiveMetric label="Net ROI" value={summary.roi === null ? 'N/A' : `${number(summary.roi)}%`} />
               <ExecutiveMetric label="Benefit-Cost Ratio" value={summary.benefitCostRatio === null ? 'N/A' : `${summary.benefitCostRatio.toFixed(2)}x`} />
               <ExecutiveMetric label="Payback Period" value={summary.payback === null ? 'N/A' : `${summary.payback.toFixed(1)} months`} />
+              <ExecutiveMetric label="Break-Even Realization" value={summary.breakEven === null ? 'N/A' : `${number(summary.breakEven * 100)}%`} />
               <ExecutiveMetric label="Strategic Opportunity — Separate" value={strategicOpportunity.valueHigh > 0 ? `${money(strategicOpportunity.valueLow)}–${money(strategicOpportunity.valueHigh)}` : 'Not yet monetized'} />
-              <ExecutiveMetric label="Potential Enterprise Context" value={strategicOpportunity.valueHigh > 0 ? `${money(summary.baseBenefit + strategicOpportunity.valueLow)}–${money(summary.baseBenefit + strategicOpportunity.valueHigh)}` : money(summary.baseBenefit)} />
-              <ExecutiveMetric label="Scenario" value={scenario} capitalize />
             </div>
           </section>
 
@@ -866,7 +981,6 @@ export default function LtcRoiCalculator() {
               icon={<FileDown className="w-4 h-4" />}
               title="Customer Report Configuration"
               description="These details appear in the printable, customer-facing report and AI advisory."
-              tooltipText="Gathers presenter information, target audience, and metadata to generate the client-facing printable report and guide the context of the AI advisory synthesis."
             />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <TextInput label="Prepared By" value={proposerName} onChange={setProposerName} />
@@ -883,7 +997,6 @@ export default function LtcRoiCalculator() {
               icon={<Sparkles className="w-4 h-4" />}
               title="AI Strategic Advisory"
               description="Gemini explains the verified calculations. The prompt prohibits invented savings, clinical claims, CMS outcomes or guarantees."
-              tooltipText="Synthesizes calculations and operational gaps using Gemini, presenting verified operational opportunities without inventing savings or guaranteeing clinical outcomes."
             />
             {!aiStrategy && !aiStrategyLoading && (
               <button type="button" onClick={generateAiStrategyReport} className="inline-flex items-center gap-2 bg-paycor-orange text-white font-extrabold px-4 py-2.5 rounded-xl text-xs">
@@ -962,21 +1075,16 @@ function SectionHeader({
   icon,
   title,
   description,
-  tooltipText,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
-  tooltipText?: string;
 }) {
   return (
     <div className="flex items-start gap-2.5 border-b border-slate-100 pb-4 mb-5">
       <div className="text-paycor-orange mt-0.5">{icon}</div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center flex-wrap">
-          <h2 className="text-sm font-extrabold">{title}</h2>
-          {tooltipText && <HelpTooltip content={tooltipText} title={title} />}
-        </div>
+      <div>
+        <h2 className="text-sm font-extrabold">{title}</h2>
         <p className="text-[10px] text-paycor-medium-grey mt-1 leading-relaxed">{description}</p>
       </div>
     </div>
@@ -1016,6 +1124,7 @@ function NumberInput({
   prefix,
   suffix,
   source,
+  decimals = 0,
 }: {
   label: string;
   value: number;
@@ -1023,7 +1132,11 @@ function NumberInput({
   prefix?: string;
   suffix?: string;
   source?: InputSourceRecord;
+  decimals?: number;
 }) {
+  const displayValue = Number.isFinite(value)
+    ? Number(value.toFixed(decimals))
+    : 0;
   return (
     <label>
       <InputLabel label={label} source={source} />
@@ -1032,8 +1145,8 @@ function NumberInput({
         <input
           type="number"
           min="0"
-          step="any"
-          value={Number.isFinite(value) ? value : 0}
+          step={decimals > 0 ? 1 / 10 ** decimals : 1}
+          value={displayValue}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(Number(event.target.value) || 0)}
           className={`w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 text-sm outline-none focus:border-paycor-orange ${prefix ? 'pl-7 pr-3' : 'px-3'} ${suffix ? 'pr-8' : ''}`}
         />
@@ -1082,7 +1195,7 @@ function InputLabel({ label, source }: { label: string; source?: InputSourceReco
   };
   return (
     <span className="flex items-center justify-between gap-2 mb-1.5">
-      <span className="text-[10px] uppercase tracking-wider font-bold text-paycor-grey">{label}</span>
+      <span className="text-[11px] font-bold text-paycor-medium-grey">{label}</span>
       {source && (
         <span
           title={[source.label, source.note].filter(Boolean).join(' — ')}

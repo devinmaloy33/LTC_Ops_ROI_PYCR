@@ -240,7 +240,7 @@ export function calculateFacilityROI(
       annualBenefit: retiredTechBenefit,
       includedInBaseROI: true,
       explanation:
-        'Includes only confirmed recurring systems that can be eliminated, consolidated or not renewed. It is counted once and is not also subtracted from the investment denominator.',
+        'Includes only confirmed recurring systems that can be eliminated, consolidated or not renewed. It is counted once and is not also deducted from the investment denominator.',
     },
     {
       key: 'strategic',
