@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getD1 } from '@/db';
 import { getAdminAuthorization } from '@/lib/admin-auth';
 import { buildAvailableFacts, CalculatorSnapshot, safeJsonObject } from '@/lib/facility-data';
+import { serializeVoiceCall } from '@/lib/voice-calls';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +17,12 @@ export async function GET(_request: Request, context: { params: Promise<{ ccn: s
   const facility = await db.prepare('SELECT * FROM facilities WHERE ccn = ?').bind(ccn).first<Record<string, unknown>>();
   if (!facility) return NextResponse.json({ error: 'Facility not found.' }, { status: 404 });
 
-  const [engagementResult, eventResult, campaignResult] = await Promise.all([
+  const [engagementResult, eventResult, campaignResult, callResult, suppressionResult] = await Promise.all([
     db.prepare('SELECT * FROM facility_engagements WHERE ccn = ? ORDER BY last_activity_at DESC LIMIT 25').bind(ccn).all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM facility_events WHERE ccn = ? ORDER BY occurred_at DESC LIMIT 100').bind(ccn).all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM outreach_campaigns WHERE ccn = ? ORDER BY created_at DESC LIMIT 25').bind(ccn).all<Record<string, unknown>>(),
+    db.prepare('SELECT * FROM voice_calls WHERE ccn = ? ORDER BY created_at DESC LIMIT 25').bind(ccn).all<Record<string, unknown>>(),
+    db.prepare('SELECT phone_number, reason, created_at FROM do_not_call_numbers WHERE ccn = ? ORDER BY created_at DESC').bind(ccn).all<Record<string, unknown>>(),
   ]);
   const engagements = (engagementResult.results || []).map((row) => ({
     id: String(row.id), startedAt: Number(row.started_at), lastActivityAt: Number(row.last_activity_at),
@@ -40,6 +43,10 @@ export async function GET(_request: Request, context: { params: Promise<{ ccn: s
     selectedFacts: parseArray(row.selected_facts_json, true),
     campaign: safeJsonObject<Record<string, unknown>>(row.campaign_json), model: String(row.model),
   }));
+  const voiceCalls = (callResult.results || []).map(serializeVoiceCall);
+  const doNotCallNumbers = (suppressionResult.results || []).map((row) => ({
+    phoneNumber: String(row.phone_number), reason: String(row.reason), createdAt: Number(row.created_at),
+  }));
 
   return NextResponse.json({
     facility: {
@@ -52,7 +59,7 @@ export async function GET(_request: Request, context: { params: Promise<{ ccn: s
       totalFines: facility.total_fines, healthDeficiencies: facility.health_deficiencies,
       cmsRetrievedAt: Number(facility.cms_retrieved_at), firstSeenAt: Number(facility.first_seen_at), lastSeenAt: Number(facility.last_seen_at),
     },
-    engagements, events, campaigns,
+    engagements, events, campaigns, voiceCalls, doNotCallNumbers,
     availableFacts: buildAvailableFacts(facility, latestSnapshot),
   });
 }
