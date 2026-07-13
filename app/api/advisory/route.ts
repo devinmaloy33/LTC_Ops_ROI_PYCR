@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const ai = getGemini();
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
     const prompt = `
 You are a senior healthcare workforce, financial-value and long-term care operations consultant preparing a customer-facing advisory for Paycor.
