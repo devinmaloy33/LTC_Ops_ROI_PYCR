@@ -30,7 +30,7 @@ type VoiceCall = {
   id: string; ccn: string; campaignId: string | null; campaignTouchDay: number | null; phoneNumber: string; persona: string;
   callBrief: { opener?: string; voicemail?: string; calendlyUrl?: string; appointmentLength?: string; selectedFacts?: OutreachFact[]; discoveryQuestions?: string[]; objectionResponses?: Array<{ objection: string; response: string }> };
   knownContactName: string | null; knownContactTitle: string | null; knownContactEmail: string | null; knownContactExtension: string | null;
-  conversationId: string | null; providerCallSid: string | null; status: string;
+  conversationId: string | null; providerCallSid: string | null; providerConversationUrl: string | null; status: string;
   transcript: Array<{ role: string; text: string; atSeconds: number | null }>; summary: string | null;
   callSuccessful: boolean | null; durationSeconds: number | null; costCredits: number | null;
   capturedContactName: string | null; capturedContactTitle: string | null; capturedContactEmail: string | null; capturedContactExtension: string | null;
@@ -291,6 +291,8 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
   const [businessLineConfirmed, setBusinessLineConfirmed] = useState(false);
   const [lawfulContactConfirmed, setLawfulContactConfirmed] = useState(false);
   const [aiDisclosureConfirmed, setAiDisclosureConfirmed] = useState(false);
+  const [recordingConsentConfirmed, setRecordingConsentConfirmed] = useState(false);
+  const [audioErrorId, setAudioErrorId] = useState('');
   const [starting, setStarting] = useState(false);
   const [syncingId, setSyncingId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -355,14 +357,14 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
           ccn: facility.ccn, phoneNumber, persona: resolvedPersona, knownContactName, knownContactTitle,
           knownContactEmail, knownContactExtension, campaignId: campaignId || undefined,
           campaignTouchDay: campaignId ? campaignTouchDay : undefined,
-          businessLineConfirmed, lawfulContactConfirmed, aiDisclosureConfirmed,
+          businessLineConfirmed, lawfulContactConfirmed, aiDisclosureConfirmed, recordingConsentConfirmed,
         }),
       });
       const payload = await response.json() as { call?: VoiceCall; error?: string };
       if (!response.ok || !payload.call) throw new Error(payload.error || 'The call could not be started.');
       replaceCall(payload.call);
       setNotice('The manually approved outbound call has started. Status will refresh automatically.');
-      setBusinessLineConfirmed(false); setLawfulContactConfirmed(false); setAiDisclosureConfirmed(false);
+      setBusinessLineConfirmed(false); setLawfulContactConfirmed(false); setAiDisclosureConfirmed(false); setRecordingConsentConfirmed(false);
       await onChanged();
     } catch (startError) { setError(startError instanceof Error ? startError.message : 'The call could not be started.'); }
     finally { setStarting(false); }
@@ -397,13 +399,13 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
     finally { setSaving(false); }
   };
 
-  const canStart = phoneNumber.trim() && (persona !== 'Other' || customRole.trim()) && businessLineConfirmed && lawfulContactConfirmed && aiDisclosureConfirmed && !starting;
+  const canStart = phoneNumber.trim() && (persona !== 'Other' || customRole.trim()) && businessLineConfirmed && lawfulContactConfirmed && aiDisclosureConfirmed && recordingConsentConfirmed && !starting;
 
   return (
     <section className="rounded-3xl border border-sky-200 bg-sky-50/40 p-5 lg:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3"><div className="rounded-2xl bg-paycor-navy p-2.5 text-white"><Bot className="h-5 w-5" /></div><div><h3 className="text-base font-black">ElevenLabs outbound voice agent</h3><p className="mt-1 max-w-3xl text-xs leading-relaxed text-paycor-medium-grey">Place one manually approved call, navigate a facility phone tree, use a selected cadence touch, and request a 30-minute Calendly appointment. Calls are never sent in batches.</p></div></div>
-        <div className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-[10px] font-bold text-sky-800"><ShieldCheck className="mr-1 inline h-3.5 w-3.5" />Text, status, and outcomes are stored here; this dashboard does not store call audio.</div>
+        <div className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-[10px] font-bold text-sky-800"><ShieldCheck className="mr-1 inline h-3.5 w-3.5" />Future call recordings are retained by ElevenLabs for 30 days and can be played here.</div>
       </div>
 
       {detail.doNotCallNumbers.length > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-[10px] text-red-700"><Ban className="mr-1 inline h-3.5 w-3.5" />{detail.doNotCallNumbers.length} facility number{detail.doNotCallNumbers.length === 1 ? ' is' : 's are'} blocked from future calls.</div>}
@@ -437,6 +439,7 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
             <CallAttestation checked={businessLineConfirmed} onChange={setBusinessLineConfirmed}>I verified this is a facility or other business line, not a personal or emergency number.</CallAttestation>
             <CallAttestation checked={lawfulContactConfirmed} onChange={setLawfulContactConfirmed}>I have a lawful basis to place this business call and have checked applicable consent and do-not-call requirements.</CallAttestation>
             <CallAttestation checked={aiDisclosureConfirmed} onChange={setAiDisclosureConfirmed}>I approve the opening disclosure that this is an AI assistant calling for Devin Maloy with Paycor.</CallAttestation>
+            <CallAttestation checked={recordingConsentConfirmed} onChange={setRecordingConsentConfirmed}>I confirm recording is lawful for this call and any required notice or consent will be provided.</CallAttestation>
           </div>
           <button type="button" onClick={() => void startCall()} disabled={!canStart} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-paycor-navy px-5 py-3 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50">{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}{starting ? 'Starting approved call…' : 'Start approved call'}</button>
           <p className="mt-3 text-[9px] leading-relaxed text-paycor-grey">No live test call is placed during setup. The agent will dial only when you press this button after completing all confirmations.</p>
@@ -454,7 +457,12 @@ function VoiceCallingPanel({ detail, onChanged }: { detail: FacilityDetail; onCh
                 {(selected.preferredDay || selected.preferredTimeWindow || selected.preferredTimezone) && <div className="rounded-xl bg-amber-50 p-3 text-[10px] text-amber-950"><strong>Scheduling preference</strong><p className="mt-1">{[selected.preferredDay, selected.preferredTimeWindow, selected.preferredTimezone].filter(Boolean).join(' · ')}</p><p className="mt-1">Follow-up permission: {selected.followUpPermission == null ? 'Not captured' : selected.followUpPermission ? 'Yes' : 'No'}</p></div>}
                 {selected.phoneTreePath && <div className="rounded-xl bg-sky-50 p-3 text-[10px] text-sky-950"><strong>Phone-tree path</strong><p className="mt-1">{selected.phoneTreePath}</p></div>}
               </div>}
-              <div className="flex flex-wrap gap-2"><a href={selected.callBrief.calendlyUrl || 'https://calendly.com/dmaloy-paycor/30min'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-extrabold text-sky-800"><CalendarCheck className="h-3.5 w-3.5" />Open 30-minute Calendly</a></div>
+              <div className="flex flex-wrap gap-2"><a href={selected.callBrief.calendlyUrl || 'https://calendly.com/dmaloy-paycor/30min'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-extrabold text-sky-800"><CalendarCheck className="h-3.5 w-3.5" />Open 30-minute Calendly</a>{selected.providerConversationUrl && <a href={selected.providerConversationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-extrabold text-paycor-medium-grey"><ExternalLink className="h-3.5 w-3.5" />Open in ElevenLabs</a>}</div>
+              {selected.conversationId && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+                <div className="flex items-center gap-2 text-[10px] font-extrabold text-sky-900"><Headphones className="h-4 w-4" />Call recording</div>
+                <audio key={selected.id} className="mt-2 w-full" controls preload="metadata" src={`/api/admin/voice-calls/${selected.id}/audio`} onError={() => setAudioErrorId(selected.id)} onCanPlay={() => setAudioErrorId('')} />
+                {audioErrorId === selected.id && <p className="mt-2 text-[10px] leading-relaxed text-amber-800">No recording is available for this call. Calls placed before recording was enabled cannot be recovered; use the transcript above instead.</p>}
+              </div>}
               {selected.callBrief.opener && <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-[10px] font-extrabold">Exact call brief used {selected.campaignTouchDay ? `· Day ${selected.campaignTouchDay}` : ''}</summary><div className="mt-3 space-y-3 text-[10px] leading-relaxed text-paycor-medium-grey"><p><strong>Opener:</strong> {selected.callBrief.opener}</p><p><strong>Voicemail:</strong> {selected.callBrief.voicemail}</p>{Boolean(selected.callBrief.selectedFacts?.length) && <ul className="list-disc space-y-1 pl-4">{selected.callBrief.selectedFacts?.map((fact) => <li key={fact.id}>{fact.label}: {fact.value} <span className="text-paycor-grey">({fact.source})</span></li>)}</ul>}</div></details>}
               <details className="rounded-xl border border-slate-200 p-3" open={selected.transcript.length > 0}><summary className="cursor-pointer text-[10px] font-extrabold">Transcript ({selected.transcript.length})</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{selected.transcript.length ? selected.transcript.map((entry, index) => <div key={`${entry.atSeconds}-${index}`} className={`rounded-xl p-2.5 text-[10px] ${entry.role === 'agent' ? 'bg-sky-50' : 'bg-slate-50'}`}><p className="font-extrabold uppercase tracking-wider text-paycor-grey">{entry.role}{entry.atSeconds == null ? '' : ` · ${Math.round(entry.atSeconds)}s`}</p><p className="mt-1 whitespace-pre-wrap leading-relaxed text-paycor-medium-grey">{entry.text}</p></div>) : <p className="text-[10px] text-paycor-grey">Transcript will appear after ElevenLabs processes the call.</p>}</div></details>
               <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-paycor-grey">Verified outcome</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><FieldLabel label="Contact found"><input className="admin-input" value={outcome.capturedContactName} onChange={(event) => setOutcome({ ...outcome, capturedContactName: event.target.value })} /></FieldLabel><FieldLabel label="Title"><input className="admin-input" value={outcome.capturedContactTitle} onChange={(event) => setOutcome({ ...outcome, capturedContactTitle: event.target.value })} /></FieldLabel><FieldLabel label="Email"><input className="admin-input" type="email" value={outcome.capturedContactEmail} onChange={(event) => setOutcome({ ...outcome, capturedContactEmail: event.target.value })} /></FieldLabel><FieldLabel label="Extension"><input className="admin-input" value={outcome.capturedContactExtension} onChange={(event) => setOutcome({ ...outcome, capturedContactExtension: event.target.value })} /></FieldLabel><FieldLabel label="Appointment status"><select className="admin-input" value={outcome.appointmentStatus} onChange={(event) => setOutcome({ ...outcome, appointmentStatus: event.target.value as VoiceCall['appointmentStatus'] })}><option value="none">Not requested / none</option><option value="pending">Requested — needs my confirmation</option><option value="confirmed">Manually confirmed</option><option value="declined">Declined</option></select></FieldLabel><FieldLabel label="Appointment details"><input className="admin-input" value={outcome.appointmentDetails} onChange={(event) => setOutcome({ ...outcome, appointmentDetails: event.target.value })} placeholder="Proposed time or follow-up needed" /></FieldLabel></div><div className="mt-3"><FieldLabel label="Outcome notes"><textarea className="admin-input resize-y" rows={3} value={outcome.outcomeNotes} onChange={(event) => setOutcome({ ...outcome, outcomeNotes: event.target.value })} /></FieldLabel></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void saveOutcome()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-paycor-orange px-4 py-2.5 text-[10px] font-extrabold text-white"><Save className="h-3.5 w-3.5" />Save verified outcome</button><button type="button" onClick={() => void markDoNotCall()} disabled={saving || selected.optedOut} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[10px] font-extrabold text-red-700 disabled:opacity-50"><Ban className="h-3.5 w-3.5" />{selected.optedOut ? 'Do not call' : 'Mark do not call'}</button></div></div>

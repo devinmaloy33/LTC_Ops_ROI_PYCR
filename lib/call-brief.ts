@@ -47,8 +47,8 @@ export function buildCallBrief(input: {
   const targetRole = clean(input.targetRole, 100) || 'facility leader';
   const state = clean(input.state, 12);
   const callbackPhone = readablePhone(input.callbackPhone || '2607971814');
-  const genericOpener = `Hi, I am an AI assistant calling for Devin Maloy with Paycor. I am reaching out to ${targetRole} leaders in long-term care${state ? ` in ${state}` : ''}. May I take 30 seconds to explain why Devin requested the call, and then you can decide whether a 30-minute conversation would be useful?`;
-  const genericVoicemail = `Hi, this is an AI assistant calling for Devin Maloy with Paycor regarding ${facilityName}. If a brief workforce conversation would be useful, Devin can be reached at ${callbackPhone}. Thank you.`;
+  const genericOpener = `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. May I take 20 seconds to explain why Devin requested the call?`;
+  const genericVoicemail = `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. Devin would like to compare workforce and payroll priorities at ${facilityName}. Please call ${callbackPhone}. Thank you.`;
 
   return {
     version: 1,

@@ -49,13 +49,18 @@ export function normalizeConversation(payload: Record<string, unknown>) {
 }
 
 export function serializeVoiceCall(row: Record<string, unknown>) {
+  const conversationId = nullableText(row.conversation_id);
+  const agentId = nullableText(row.agent_id);
   return {
     id: String(row.id), ccn: String(row.ccn), campaignId: nullableText(row.campaign_id),
     campaignTouchDay: nullableNumber(row.campaign_touch_day), callBrief: parseObject(row.call_brief_json),
     phoneNumber: String(row.phone_number), persona: String(row.persona),
     knownContactName: nullableText(row.known_contact_name), knownContactTitle: nullableText(row.known_contact_title),
     knownContactEmail: nullableText(row.known_contact_email), knownContactExtension: nullableText(row.known_contact_extension),
-    conversationId: nullableText(row.conversation_id), providerCallSid: nullableText(row.provider_call_sid),
+    conversationId, providerCallSid: nullableText(row.provider_call_sid),
+    providerConversationUrl: conversationId && agentId
+      ? `https://elevenlabs.io/app/agents/agents/${encodeURIComponent(agentId)}/history/${encodeURIComponent(conversationId)}`
+      : null,
     agentVersionId: nullableText(row.agent_version_id),
     status: String(row.status), transcript: parseTranscript(row.transcript_json), summary: nullableText(row.summary),
     callSuccessful: row.call_successful === null || row.call_successful === undefined ? null : Boolean(row.call_successful),

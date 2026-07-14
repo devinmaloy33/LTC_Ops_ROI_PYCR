@@ -35,8 +35,13 @@ export async function POST(request: NextRequest) {
     if (campaignId && !CAMPAIGN_TOUCH_DAYS.includes(campaignTouchDay as never)) {
       return NextResponse.json({ error: 'Choose Day 1, Day 3, or Day 7 for the linked cadence.' }, { status: 400 });
     }
-    if (body.businessLineConfirmed !== true || body.lawfulContactConfirmed !== true || body.aiDisclosureConfirmed !== true) {
-      return NextResponse.json({ error: 'Confirm the business-line, lawful-contact, and AI-disclosure attestations before calling.' }, { status: 400 });
+    if (
+      body.businessLineConfirmed !== true || body.lawfulContactConfirmed !== true ||
+      body.aiDisclosureConfirmed !== true || body.recordingConsentConfirmed !== true
+    ) {
+      return NextResponse.json({
+        error: 'Confirm the business-line, lawful-contact, AI-disclosure, and call-recording attestations before calling.',
+      }, { status: 400 });
     }
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -91,13 +96,13 @@ export async function POST(request: NextRequest) {
     ).run();
 
     const nameParts = knownContactName.split(/\s+/).filter(Boolean);
-    const prospectFirst = nameParts[0] || 'the person';
-    const prospectLast = nameParts.length > 1 ? nameParts.slice(1).join(' ') : knownContactName ? '' : `responsible for ${persona}`;
+    const prospectFirst = nameParts[0] || '';
+    const prospectLast = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
     const outboundBody = {
       agent_id: agentId,
       agent_phone_number_id: agentPhoneNumberId,
       to_number: phoneNumber,
-      call_recording_enabled: false,
+      call_recording_enabled: true,
       conversation_initiation_client_data: {
         dynamic_variables: {
           _prospect_first_name_: prospectFirst,
