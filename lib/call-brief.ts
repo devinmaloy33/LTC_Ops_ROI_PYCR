@@ -50,6 +50,9 @@ export function buildCallBrief(input: {
   const genericOpener = `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. May I take 20 seconds to explain why Devin requested the call?`;
   const genericVoicemail = `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. Devin would like to compare workforce and payroll priorities at ${facilityName}. Please call ${callbackPhone}. Thank you.`;
 
+  const campaignOpener = clean(touch?.liveCallOpener, 1200);
+  const campaignVoicemail = clean(touch?.voicemail, 600);
+
   return {
     version: 1,
     facilityName,
@@ -58,8 +61,10 @@ export function buildCallBrief(input: {
     campaignId: input.campaignId || null,
     campaignTouchDay: touch ? touch.day : null,
     selectedFacts: facts,
-    opener: clean(touch?.liveCallOpener, 1200) || genericOpener,
-    voicemail: ensureCallback(clean(touch?.voicemail, 600), callbackPhone) || genericVoicemail,
+    opener: isCoordinatedPhoneAsset(campaignOpener) ? campaignOpener : genericOpener,
+    voicemail: isCoordinatedPhoneAsset(campaignVoicemail)
+      ? ensureCallback(campaignVoicemail, callbackPhone)
+      : genericVoicemail,
     discoveryQuestions: touch?.discoveryQuestions.map((item) => clean(item, 300)).filter(Boolean).slice(0, 3) || [
       'What workforce priority is taking the most attention right now?',
       'How are you currently evaluating whether your workforce systems support that priority?',
@@ -136,6 +141,12 @@ function ensureCallback(message: string, callbackPhone: string) {
   const digits = callbackPhone.replace(/\D/g, '');
   const existingDigits = message.replace(/\D/g, '');
   return existingDigits.includes(digits) ? message : `${message} You can reach Devin at ${callbackPhone}.`;
+}
+
+function isCoordinatedPhoneAsset(message: string) {
+  if (!message || /\[[^\]]+\]/.test(message)) return false;
+  if (!/\bAlex\b/i.test(message) || !/\bAI assistant\b/i.test(message) || !/\bPaycor\b/i.test(message)) return false;
+  return !/\b(?:five|ten|fifteen|twenty|forty-five|sixty|5|10|15|20|45|60)[ -]minute\b/i.test(message);
 }
 
 function readablePhone(value: string) {

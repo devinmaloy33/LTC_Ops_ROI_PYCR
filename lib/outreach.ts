@@ -74,8 +74,14 @@ export function parseAndValidateCampaign(
     const emailWords = wordCount(touch.email);
     if (emailWords < 60 || emailWords > 110) errors.push(`Day ${touch.day} email must contain 60-110 words.`);
     const openerWords = wordCount(touch.liveCallOpener);
-    if (openerWords < 45 || openerWords > 100) errors.push(`Day ${touch.day} live opener must contain 45-100 words.`);
-    if (wordCount(touch.voicemail) > 65 || wordCount(touch.voicemail) < 20) errors.push(`Day ${touch.day} voicemail must contain 20-65 words.`);
+    if (openerWords < 20 || openerWords > 45) errors.push(`Day ${touch.day} live opener must contain 20-45 words.`);
+    if (wordCount(touch.voicemail) > 32 || wordCount(touch.voicemail) < 18) errors.push(`Day ${touch.day} voicemail must contain 18-32 words.`);
+    for (const [label, asset] of [['live opener', touch.liveCallOpener], ['voicemail', touch.voicemail]] as const) {
+      if (!/\bAlex\b/i.test(asset) || !/\bAI assistant\b/i.test(asset) || !/\bPaycor\b/i.test(asset)) {
+        errors.push(`Day ${touch.day} ${label} must identify Alex as an AI assistant at Paycor.`);
+      }
+      if (/\[[^\]]+\]/.test(asset)) errors.push(`Day ${touch.day} ${label} must not contain bracketed placeholders.`);
+    }
     if (!touch.email?.includes(optOutLine)) errors.push(`Day ${touch.day} email must include the opt-out line exactly.`);
     if (!Array.isArray(touch.discoveryQuestions) || touch.discoveryQuestions.length !== 3) errors.push(`Day ${touch.day} must include three discovery questions.`);
     if (!Array.isArray(touch.objectionResponses) || touch.objectionResponses.length !== 3 || touch.objectionResponses.some((item) => !item?.objection || !item?.response)) {
@@ -84,6 +90,9 @@ export function parseAndValidateCampaign(
   }
 
   const content = JSON.stringify(campaign);
+  if (/\b(?:five|ten|fifteen|twenty|forty-five|sixty|5|10|15|20|45|60)[ -]minute\b/i.test(content)) {
+    errors.push('Appointment duration must match the 30-minute Calendly meeting.');
+  }
   if (/guaranteed?|guarantees|manipulat|vulnerab|shame|fear tactic|secretly|trick (?:them|the)/i.test(content)) {
     errors.push('Campaign contains prohibited pressure or unsupported certainty language.');
   }

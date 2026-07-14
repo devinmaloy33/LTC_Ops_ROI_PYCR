@@ -125,7 +125,10 @@ Hard rules:
 - Never state that Paycor guarantees savings, ratings, staffing, census, compliance or clinical outcomes.
 - Calculator-provided values are estimates, not CMS-reported facts. Preserve that distinction.
 - Subjects contain 2-8 words. Each email contains 60-110 words and ends with this exact sentence: ${JSON.stringify(input.optOutLine)}
-- Each live opener contains 45-100 words. Each voicemail contains 20-65 words.
+- Each live opener contains 20-45 words. Each voicemail contains 18-32 words.
+- Every live opener and voicemail truthfully identifies "Alex, Devin Maloy's AI assistant at Paycor." Do not use [Name], [Phone], or any bracketed placeholder.
+- The available appointment is 30 minutes at https://calendly.com/dmaloy-paycor/30min. Any appointment request must say 30 minutes; never offer 5, 10, 15, 20, 45, or 60 minutes.
+- Phone scripts use one idea and one question. They do not repeat the identity, fact, or call-to-action.
 - Every touch has exactly three discovery questions and three concise objection/response pairs.
 - Days are exactly 1, 3 and 7, in that order. Vary the factual angle and CTA across touches.
 - Do not use quantified claims unless the exact quantified value appears in the selected facts.

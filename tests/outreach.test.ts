@@ -17,8 +17,8 @@ function validCampaign(): OutreachCampaign {
       day,
       subject: 'A brief staffing question',
       email: `${words(65)} ${optOut}`,
-      liveCallOpener: words(50),
-      voicemail: words(28),
+      liveCallOpener: `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. ${words(13)} Would a 30-minute conversation with Devin be useful?`,
+      voicemail: `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. ${words(8)} Please call Devin back. Thank you.`,
       discoveryQuestions: ['What is the current priority?', 'How is progress measured?', 'Would a comparison be useful?'],
       objectionResponses: [
         { objection: 'Not a priority', response: 'Understood. May I check back later?' },
@@ -49,4 +49,13 @@ test('rejects missing opt-out language and malformed cadence days', () => {
   const result = parseAndValidateCampaign(JSON.stringify(campaign), facts, optOut);
   assert.ok(result.errors.some((error) => error.includes('days 1, 3 and 7')));
   assert.ok(result.errors.some((error) => error.includes('opt-out line')));
+});
+
+test('rejects phone assets that hide AI identity, use placeholders, or offer the wrong meeting length', () => {
+  const campaign = validCampaign();
+  campaign.touches[0].liveCallOpener = `${words(20)} Could we schedule a five-minute call with [Name]?`;
+  const result = parseAndValidateCampaign(JSON.stringify(campaign), facts, optOut);
+  assert.ok(result.errors.some((error) => error.includes('identify Alex as an AI assistant')));
+  assert.ok(result.errors.some((error) => error.includes('bracketed placeholders')));
+  assert.ok(result.errors.some((error) => error.includes('30-minute Calendly meeting')));
 });

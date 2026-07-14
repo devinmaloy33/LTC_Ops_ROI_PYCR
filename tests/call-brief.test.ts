@@ -5,8 +5,9 @@ import { buildCallBrief, callBriefDynamicVariables } from '../lib/call-brief';
 const campaign = {
   campaignTitle: 'Administrator outreach', strategySummary: 'Use one verified fact.',
   touches: [1, 3, 7].map((day) => ({
-    day, subject: `Day ${day} note`, email: 'x', liveCallOpener: `Approved opener for day ${day}.`,
-    voicemail: `Approved voicemail for day ${day}.`,
+    day, subject: `Day ${day} note`, email: 'x',
+    liveCallOpener: `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. Approved opener for day ${day}.`,
+    voicemail: `Hi, this is Alex, Devin Maloy's AI assistant at Paycor. Approved voicemail for day ${day}.`,
     discoveryQuestions: ['Question one?', 'Question two?', 'Question three?'],
     objectionResponses: [{ objection: 'Busy', response: 'I understand.' }, { objection: 'Email me', response: 'Of course.' }, { objection: 'No interest', response: 'Understood.' }],
   })),
@@ -20,7 +21,7 @@ test('buildCallBrief selects the requested saved cadence touch and preserves fac
     callbackPhone: '2607971814', now: 100,
   });
   assert.equal(brief.campaignTouchDay, 3);
-  assert.equal(brief.opener, 'Approved opener for day 3.');
+  assert.match(brief.opener, /Approved opener for day 3/);
   assert.match(brief.voicemail, /260-797-1814/);
   assert.equal(brief.selectedFacts[0].source, 'CMS-reported');
   const variables = callBriefDynamicVariables(brief, 'call-1');
@@ -42,4 +43,17 @@ test('buildCallBrief provides a safe generic fallback without a campaign', () =>
   assert.equal(brief.campaignTouchDay, null);
   assert.match(brief.opener, /AI assistant/);
   assert.equal(brief.calendlyUrl, 'https://calendly.com/dmaloy-paycor/30min');
+});
+
+test('buildCallBrief replaces legacy phone scripts that conflict with disclosure or Calendly duration', () => {
+  const legacyCampaign = structuredClone(campaign);
+  legacyCampaign.touches[0].liveCallOpener = 'Hi, this is [Name] with Paycor. Could we schedule a five-minute call?';
+  legacyCampaign.touches[0].voicemail = 'Hi, this is [Name] from Paycor. Call me at [Phone].';
+  const brief = buildCallBrief({
+    facilityName: 'Example LTC', state: 'IN', targetRole: 'CFO', campaignId: 'legacy',
+    campaignTouchDay: 1, campaignJson: legacyCampaign,
+  });
+  assert.match(brief.opener, /Alex, Devin Maloy's AI assistant at Paycor/);
+  assert.doesNotMatch(brief.opener, /five-minute|\[Name\]/i);
+  assert.match(brief.voicemail, /Alex, Devin Maloy's AI assistant at Paycor/);
 });
